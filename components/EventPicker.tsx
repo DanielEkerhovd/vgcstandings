@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CircuitEvent } from "@/lib/events";
+import type { CircuitEvent, Tier } from "@/lib/events";
+import { fold } from "@/lib/search";
+
+/** Fixed order for the tier chips, so the bar doesn't reshuffle when the
+ *  catalogue gains a tier it hadn't run yet. */
+const TIERS: Tier[] = ["Worlds", "Intl", "Regional", "Special", "Cup", "Event"];
 
 /** The month header already says the month and year, so a row only needs the
  *  days: "September 18-20, 2026" -> "18-20". */
@@ -26,6 +31,11 @@ const MONTH = (iso: string) =>
  *
  * Upcoming events are shown but not selectable: they have no standings yet,
  * and hiding them would lose the thing a timeline is for.
+ *
+ * The filter bar narrows the list; it never reorders it. A name or tier sort
+ * would leave the month headers and the Today line marking nothing. Its state
+ * is deliberately not persisted — a tier switched off last week must not still
+ * be hiding events on arrival.
  */
 export default function EventPicker({
   circuit,
@@ -37,19 +47,51 @@ export default function EventPicker({
   onPick: (tid: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  /** Empty means everything. So "no filter" and "every tier ticked" are the
+   *  same state, and there's no all-lit default to explain. */
+  const [tiers, setTiers] = useState<ReadonlySet<Tier>>(() => new Set());
   const wrap = useRef<HTMLDivElement>(null);
 
   const current = circuit.find((e) => e.tid === tid);
+  const filtering = q.trim() !== "" || tiers.size > 0;
+
+  /** Only the tiers this catalogue actually contains — a chip for a tier
+   *  nobody ran is a control that can only empty the list. */
+  const present = useMemo(() => {
+    const have = new Set(circuit.map((e) => e.tier));
+    return TIERS.filter((t) => have.has(t));
+  }, [circuit]);
 
   const { upcoming, done } = useMemo(() => {
-    const up = circuit
+    const needle = fold(q);
+    const keep = (e: CircuitEvent) =>
+      (tiers.size === 0 || tiers.has(e.tier)) &&
+      (needle === "" || fold(e.label).includes(needle));
+    const hits = circuit.filter(keep);
+    const up = hits
       .filter((e) => e.status === "upcoming")
       .sort((a, b) => a.start.localeCompare(b.start));
-    const dn = circuit
+    const dn = hits
       .filter((e) => e.status === "done")
       .sort((a, b) => b.start.localeCompare(a.start));
     return { upcoming: up, done: dn };
-  }, [circuit]);
+  }, [circuit, q, tiers]);
+
+  const toggleTier = (t: Tier) =>
+    setTiers((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(t)) next.add(t);
+      return next;
+    });
+
+  // Closing clears the filter, which is also what makes Escape do the right
+  // thing: it closes the panel, and the query goes with it.
+  useEffect(() => {
+    if (open) return;
+    setQ("");
+    setTiers((prev) => (prev.size ? new Set() : prev));
+  }, [open]);
 
   // Close on outside click or Escape, like any other menu.
   useEffect(() => {
@@ -97,7 +139,7 @@ export default function EventPicker({
         >
           <span className="node" />
           <span className="label">{e.label}</span>
-          {e.country && <span className="cc">{e.country}</span>}
+          {e.country && <span className="cc-chip">{e.country}</span>}
           <span className={`tier t-${e.tier.toLowerCase()}`}>{e.tier}</span>
           <span className="when">{dayRange(e.dates)}</span>
         </button>,
@@ -129,18 +171,60 @@ export default function EventPicker({
 
       {open && (
         <div className="picker-panel" role="dialog" aria-label="Choose an event">
-          <div className="tl">
-            {upcoming.length > 0 && (
-              <>
-                <div className="tlhead">Coming up</div>
-                {rows(upcoming)}
-              </>
+          <div className="pkfilter">
+            <input
+              type="search"
+              className="search"
+              placeholder="Filter events…"
+              aria-label="Filter events by name"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            {present.length > 1 && (
+              <div className="pktiers">
+                {present.map((t) => (
+                  <button
+                    key={t}
+                    className={`tier chip t-${t.toLowerCase()}${tiers.has(t) ? " on" : ""}`}
+                    aria-pressed={tiers.has(t)}
+                    onClick={() => toggleTier(t)}
+                    title={`Show only ${t} events`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
             )}
-            <div className="nowline">
-              <span>Today</span>
-            </div>
-            {rows(done)}
+            {filtering && (
+              <div className="pkcount" aria-live="polite">
+                {upcoming.length + done.length} of {circuit.length}
+              </div>
+            )}
           </div>
+
+          {upcoming.length + done.length === 0 ? (
+            <div className="pkempty">No events match.</div>
+          ) : (
+            <div className="tlscroll">
+              <div className="tl">
+                {upcoming.length > 0 && (
+                  <>
+                    <div className="tlhead">Coming up</div>
+                    {rows(upcoming)}
+                  </>
+                )}
+                {/* A Today rule with nothing under it reads as a fault, and a
+                    filter matching only upcoming events can produce exactly
+                    that. Unfiltered, `done` is never empty. */}
+                {done.length > 0 && (
+                  <div className="nowline">
+                    <span>Today</span>
+                  </div>
+                )}
+                {rows(done)}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

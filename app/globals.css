@@ -648,7 +648,7 @@ button { cursor: pointer; }
   display: grid; grid-template-columns: minmax(0,.85fr) minmax(0,1.15fr); gap: 1.1rem;
 }
 @media (max-width: 760px) { .detail { grid-template-columns: minmax(0,1fr); } }
-.detail h3, .mdp h3 {
+.detail h3, .mdp h3, footer.foot .foot-contact h2 {
   margin: 0 0 .45rem; font-family: var(--mono); font-size: .56rem; font-weight: 700;
   letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
 }
@@ -1354,19 +1354,47 @@ button.bnode:focus-visible { border-radius: 12px; }
 .picker-trigger svg { flex: none; opacity: .6; }
 .picker-trigger:hover svg { opacity: 1; }
 
+/* The panel is a column: the filter bar keeps its place and the timeline is
+   what scrolls under it. Scrolling the panel itself would put the bar inside
+   the scroller and leave it to `position: sticky` to hold it there. */
 .picker-panel {
   position: absolute; z-index: 60; top: calc(100% + .5rem); left: 0;
-  width: min(470px,92vw); max-height: 62vh; overflow-y: auto;
+  width: min(470px,92vw); max-height: 62vh; overflow: hidden;
+  display: flex; flex-direction: column;
   background: var(--card); border: 1.5px solid var(--line); border-radius: 14px;
   padding: .7rem .8rem .8rem;
   box-shadow: 0 18px 46px -20px rgba(0,0,0,.5);
 }
-.tl { position: relative; padding-left: 1.15rem; }
-.tl::before { content: ""; position: absolute; left: .28rem; top: .3rem; bottom: .3rem; width: 2px; background: var(--hair); }
+/* The scroller is the wrapper, never `.tl` itself: the spine below is absolute
+   with `bottom`, which against a scrollport would size to the visible height
+   and scroll away instead of running the length of the list. */
+.tlscroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* One gutter, one rail centre, one dot size. The rail, the dots and the
+   outdented headers all measure off these three, so they can't drift apart
+   the way three hand-tuned offsets did. */
+.tl {
+  /* The rail sits far enough in that the selected dot, grown and ringed, still
+     clears .tlscroll's left edge — an overflow-y scroller clips x as well. */
+  --gutter: 1.4rem;  /* content indent — everything but the rail is right of it */
+  --rail: .58rem;    /* centre of the rail, from .tl's left edge */
+  --dot: 8px;        /* outer diameter, border-box — the ring eats into it */
+  --dot-ring: 2px;
+  position: relative; padding-left: var(--gutter);
+}
+.tl::before {
+  content: ""; position: absolute; left: calc(var(--rail) - 1px);
+  top: .3rem; bottom: .3rem; width: 2px; background: var(--hair);
+}
+/* The headers are outdented across the rail, so they have to *break* it rather
+   than be struck through by it: each carries the panel's own fill and paints
+   above. Cutting the rail at every month is what a timeline wants anyway —
+   the gaps are where the season changes gear. */
+.tlhead, .tlmonth, .nowline { position: relative; z-index: 1; background: var(--card); }
 .tlhead, .tlmonth {
   font-family: var(--mono); font-size: .58rem; font-weight: 700;
   letter-spacing: .13em; text-transform: uppercase; color: var(--muted);
-  margin: .7rem 0 .25rem -1.15rem;
+  margin: .8rem 0 .3rem calc(var(--gutter) * -1);
+  padding: .12rem 0;
 }
 .tlhead { color: var(--live); margin-top: 0; }
 .tlrow {
@@ -1377,12 +1405,34 @@ button.bnode:focus-visible { border-radius: 12px; }
 .tlrow:hover:not(:disabled) { background: var(--card-2); border-color: var(--hair); }
 .tlrow:disabled { cursor: default; opacity: .6; }
 .tlrow.on { background: var(--lead); border-color: var(--line); color: var(--on-lead); }
+/* The dot is the row's station on the rail, so it is centred on it — the row's
+   own 1px border sits between the two, hence the extra pixel.
+
+   It's a hollow ring, and the hole is filled with the panel rather than left
+   transparent: the rail runs behind every dot, and through an open centre it
+   reads as a dot with a line drawn through it. The outer shadow is the same
+   colour again, so the rail stops short of the ring instead of butting into
+   it. Only the ring's colour changes between states — the geometry is fixed,
+   so nothing on the rail shifts as you move down the list. */
 .tlrow .node {
-  position: absolute; left: -1.02rem; width: 8px; height: 8px; border-radius: 50%;
-  background: var(--hair); border: 2px solid var(--card);
+  position: absolute; top: 50%;
+  left: calc(var(--rail) - var(--gutter) - 1px - var(--dot) / 2);
+  margin-top: calc(var(--dot) / -2);
+  width: var(--dot); height: var(--dot); border-radius: 50%;
+  background: var(--card);
+  border: var(--dot-ring) solid var(--muted);
+  box-shadow: 0 0 0 2px var(--card);
+  transition: border-color .12s ease;
 }
-.tlrow.future .node { background: var(--star); }
-.tlrow.on .node { background: var(--ink); }
+/* Nothing has been played yet, so the ring thins out to the rail's own colour
+   and the station barely registers. Gold here claimed a result for an event
+   nobody has played. */
+.tlrow.future .node { border-color: var(--hair); }
+.tlrow:hover:not(:disabled) .node { border-color: var(--ink); }
+/* The chosen event, said twice: the pill fills, and its station on the rail
+   goes gold. The second one is what you can still find once the list has been
+   scrolled and the pill itself is off the top. */
+.tlrow.on .node, .tlrow.on:hover .node { border-color: var(--lead-edge); }
 .tlrow .label { font-size: .84rem; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tlrow.future .label { font-weight: 500; color: var(--muted); }
 .tlrow .when { font-family: var(--mono); font-size: .62rem; color: var(--muted); white-space: nowrap; }
@@ -1397,8 +1447,31 @@ button.bnode:focus-visible { border-radius: 12px; }
 .tlrow.on .tier { border-color: var(--lead-dim); color: var(--lead-dim); }
 .cc-chip { font-family: var(--mono); font-size: .56rem; color: var(--muted); }
 
+/* Filter bar. Sits above the scroller, so the rule under it has to be pulled
+   out to the panel's edges to read as a divider rather than a short line. */
+.pkfilter {
+  flex: none;
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+  margin: 0 -.8rem .6rem; padding: 0 .8rem .55rem;
+  border-bottom: 1px solid var(--hair);
+}
+.pkfilter .search { flex: 1 1 100%; }
+.pktiers { display: flex; flex-wrap: wrap; gap: .3rem; }
+/* Same vocabulary as the badge each row carries, so the control and the thing
+   it filters on read as one. Ink rather than gold when on: the selected event
+   below is already the panel's one --lead fill. */
+.tier.chip { cursor: pointer; background: transparent; color: var(--muted); }
+.tier.chip:hover { background: var(--card-2); border-color: var(--ink); }
+.tier.chip.on { background: var(--ink); border-color: var(--ink); color: var(--card); }
+.pkcount {
+  margin-left: auto; font-family: var(--mono); font-size: .56rem;
+  letter-spacing: .08em; color: var(--muted); white-space: nowrap;
+}
+.pkempty { flex: none; font-size: .8rem; color: var(--muted); padding: .8rem .2rem; }
+
 .nowline {
-  display: flex; align-items: center; gap: .5rem; margin: .8rem 0 .5rem -1.15rem;
+  display: flex; align-items: center; gap: .5rem;
+  margin: .9rem 0 .5rem calc(var(--gutter) * -1); padding: .12rem 0;
   font-family: var(--mono); font-size: .56rem; font-weight: 700;
   letter-spacing: .13em; text-transform: uppercase; color: var(--live);
 }
@@ -1406,9 +1479,26 @@ button.bnode:focus-visible { border-radius: 12px; }
 
 footer.foot {
   margin-top: 1.8rem; padding-top: 1rem; border-top: 1px solid var(--hair);
-  font-size: .76rem; color: var(--muted); line-height: 1.6; max-width: 78ch;
+  font-size: .76rem; color: var(--muted); line-height: 1.6;
+  display: flex; flex-wrap: wrap; gap: .6rem 2rem; align-items: flex-start;
 }
+/* The legal column keeps the old measure; the contact column takes the slack
+   at the right and drops underneath once there isn't any. */
+footer.foot .foot-legal { flex: 1 1 46ch; max-width: 78ch; }
+footer.foot .foot-contact {
+  display: grid; gap: .25rem; margin-left: auto; justify-items: end;
+  white-space: nowrap;
+}
+/* Icon and address ride on one baseline; the mark is the muted ink so the
+   address stays the thing the eye lands on. */
+footer.foot .foot-contact a, footer.foot .foot-contact > span {
+  display: inline-flex; align-items: center; gap: .4rem;
+}
+footer.foot .foot-contact svg { flex: none; color: var(--muted); }
 footer.foot a { color: var(--ink); }
+@media (max-width: 860px) {
+  footer.foot .foot-contact { margin-left: 0; justify-items: start; }
+}
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (max-width: 860px) {

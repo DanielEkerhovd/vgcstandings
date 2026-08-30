@@ -152,8 +152,9 @@ export function countryName(code: string | null | undefined): string | null {
 
 /* ---------------- the index ---------------- */
 
-/** Lower-case and strip combining marks, so "Nicolas" finds "Nicolás". */
-const fold = (s: string) =>
+/** Lower-case and strip combining marks, so "Nicolas" finds "Nicolás".
+ *  Exported because the event picker filters on the same terms. */
+export const fold = (s: string) =>
   s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").trim();
 
 /** One searchable string off a player: their name, their IGN, a spelling of
