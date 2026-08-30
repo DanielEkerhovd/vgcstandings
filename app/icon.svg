@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="VGC standings">
+  <rect width="32" height="32" rx="7.0" fill="#241F1C"/>
+  <rect x="2.6" y="7.0" width="8.0" height="8.0" rx="1.9" fill="#F0C43C"/>
+  <rect x="12.0" y="7.0" width="8.0" height="8.0" rx="1.9" fill="#EFF0E9"/>
+  <rect x="21.4" y="7.0" width="8.0" height="8.0" rx="1.9" fill="#EFF0E9"/>
+  <rect x="2.6" y="17.0" width="8.0" height="8.0" rx="1.9" fill="#EFF0E9"/>
+  <rect x="12.0" y="17.0" width="8.0" height="8.0" rx="1.9" fill="#EFF0E9"/>
+  <rect x="21.4" y="17.0" width="8.0" height="8.0" rx="1.9" fill="#EFF0E9"/>
+</svg>

@@ -1,0 +1,44 @@
+{
+  "_why": "PokéAPI's dataset has no effect text and no flavour text for any item introduced in generation 9 — the entries exist, the words are simply absent. That is most of what a modern VGC team holds, so these are written by hand and merged over the generated file by scripts/build-effects.mjs. Every line here describes a published game mechanic; nothing is inferred. Delete an entry as soon as PokéAPI publishes one, rather than keeping two sources of truth. `npm run build:effects` prints what is still uncovered.",
+  "_voice": "No line here opens with \"Held:\". These are only ever shown under the name of an item already in a Pokémon's hand, so the preamble says nothing the page hasn't. build-effects.mjs strips the same prefix off the 279 upstream entries that carry it, which is what keeps these two sources reading as one.",
+  "_scope": "Battle-relevant held items only. Evolution items (Metal Alloy, Syrupy Apple, the teacups, Black Augurite, Peat Block, Malicious Armor) are left out: they are never held to a table, so a popover on one would be noise. The generation-9 Mega Stones are left out too — the card already prints a MEGA badge next to the Pokémon, which says the same thing in the place it matters.",
+
+  "moves": {},
+  "abilities": {},
+
+  "items": {
+    "ability-shield": {
+      "text": "The holder's Ability cannot be changed, suppressed, swapped or ignored."
+    },
+    "booster-energy": {
+      "text": "Activates Protosynthesis or Quark Drive as though harsh sunlight or Electric Terrain were up, raising the holder's highest stat. Consumed on use."
+    },
+    "clear-amulet": {
+      "text": "The holder's stats cannot be lowered by other Pokémon."
+    },
+    "covert-cloak": {
+      "text": "The holder is shielded from the additional effects of attacks."
+    },
+    "fairy-feather": {
+      "text": "Fairy-type moves from the holder do 20% more damage."
+    },
+    "loaded-dice": {
+      "text": "Moves that strike two to five times always hit at least four. Population Bomb hits at least four times."
+    },
+    "mirror-herb": {
+      "text": "When an opposing Pokémon's stats rise, the holder copies the boost. Consumed on use."
+    },
+    "punching-glove": {
+      "text": "Punching moves do 10% more damage and no longer make contact."
+    },
+    "cornerstone-mask": {
+      "text": "Ogerpon takes its Cornerstone Mask form, Grass/Rock, and its moves do 20% more damage."
+    },
+    "hearthflame-mask": {
+      "text": "Ogerpon takes its Hearthflame Mask form, Grass/Fire, and its moves do 20% more damage."
+    },
+    "wellspring-mask": {
+      "text": "Ogerpon takes its Wellspring Mask form, Grass/Water, and its moves do 20% more damage."
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "pokedata-demo",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "build:dex": "node scripts/build-pokedex.mjs",
+    "build:effects": "node scripts/build-effects.mjs",
+    "fetch:champions": "node scripts/fetch-champions.mjs",
+    "fetch:items": "node scripts/fetch-items.mjs",
+    "build:type-icons": "node scripts/build-type-icons.mjs"
+  },
+  "dependencies": {
+    "next": "^16.3.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5.6.0"
+  }
+}

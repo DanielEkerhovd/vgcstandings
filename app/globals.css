@@ -1,0 +1,1123 @@
+/* ════════════════════════════════════════════════════════════
+   Game-menu treatment. Rounded gothic for names and UI, mono for
+   every number, one yellow for the leader — and because that yellow
+   is fixed in both themes, anything sitting on it takes a fixed dark
+   ink rather than the themed one.
+   ════════════════════════════════════════════════════════════ */
+:root {
+  --paper:   #EFF0E9;
+  --card:    #FFFFFF;
+  --card-2:  #F6F6F1;
+  --ink:     #241F1C;
+  --line:    #241F1C;
+  --hair:    #D9DACE;
+  --muted:   #79736B;
+  --lead:    #F0C43C;
+  --on-lead: #241F1C;
+  --lead-dim:#6B5A17;
+  /* The running leader's hairline. It has to be the only mark on an
+     otherwise ordinary card, so it can't be --lead: that yellow is picked to
+     be read as a fill, and one pixel of it on a white card is ~1.5:1 —
+     nothing. Deeper here, and the fill's own yellow once the card behind it
+     is dark. */
+  --lead-edge:#C89211;
+  --live:    #1F8A5F;
+  --win:     #1F7A4D;
+  --loss:    #C1362B;
+  /* A nature's raised and cut stat. The same green and red a won and a lost
+     round already use — a stat going up and a game going your way are the
+     same good news to the eye — but aliased so the nature code doesn't read
+     as if it were reporting a result. var() resolves at use, so the dark
+     overrides of --win/--loss carry through without a second definition. */
+  --buff:    var(--win);
+  --nerf:    var(--loss);
+  --star:    #E8A317;
+  /* Search hits ride the same amber the rest of the UI highlights with —
+     deeper in light, brighter in dark, so the ring holds on either paper. */
+  --hit:     #E8A317;
+  /* The dim behind the match detail. Dark paper needs a heavier one: a
+     --card panel separates far less from --paper there, so the light
+     value would read as a haze rather than a dimming. */
+  --scrim:   rgba(20,18,14,.44);
+  --mono:   'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans:   'M PLUS Rounded 1c', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Density tokens. Everything that should breathe or tighten with the
+     density switch is expressed here and nowhere else — roomy is the
+     default, the compact block below is the counterweight. */
+  --row-h:   4.4rem;
+  --row-gap: .45rem;
+  --icon:    46px;
+  --rk:      3rem;     /* rank / position circle */
+  --nm:      1.06rem;  /* player + Pokémon names */
+  --sub:     .7rem;    /* trainer name, country, dropped-after */
+  --num:     1rem;     /* record, points, resistances */
+  --bar:     11px;
+  --pad-x:   1.05rem;
+  /* Bracket geometry. A card is always TWO grid tracks tall, which is what
+     lets a parent sit on the half-slot exactly between its two children
+     without measuring anything in JS. All four derive from the density
+     tokens above, so the compact block needs no bracket entries at all —
+     cards, columns and wires all shrink together. */
+  --bunit:   calc(var(--row-h) * .52);
+  --brgap:   var(--row-gap);
+  --bgap:    calc(var(--pad-x) * 2.6);
+  --bcol:    calc(var(--nm) * 13);
+  color-scheme: light;
+}
+/* One source of truth for the standings grid; .key and .row both use it.
+   The fixed columns are written as multiples of --num so they shrink with
+   the numbers they hold instead of leaving gutters in compact. */
+:root {
+  /* record / pts / opp / opp·opp are one block of four equal columns, so
+     the gap between them is the only spacing at play — nothing is wider
+     than its neighbour and no column carries extra padding. */
+  --stat: calc(var(--num) * 3.4);
+  /* The gutter between team sprites is a fraction of the sprite, so the
+     six circles keep the same visual separation whatever --icon is set to
+     — and the team column derives from both, so the width can never drift
+     out of step with the gap the way a hardcoded pixel value does. */
+  --mon-gap:  calc(var(--icon) * .085);
+  --team-col: calc(var(--icon) * 6 + var(--mon-gap) * 5);
+  --grid-cols:
+    var(--rk) calc(var(--nm) * 1.7) minmax(110px, 1fr)
+    var(--team-col)
+    repeat(4, var(--stat));        /* record · pts · opp · opp·opp */
+  --col-gap: .7rem;
+  /* Centre-to-centre distance between two adjacent bracket slots. Every
+     wire length is a multiple of this, which is why they stay joined when
+     the density switch changes the card height underneath them. */
+  --bslot: calc((var(--bunit) + var(--brgap)) * 2);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #16150F; --card: #232019; --card-2: #1C1A14;
+    --ink: #F2F0E6; --line: #0D0C09; --hair: #3A352B; --muted: #999285;
+    --live: #48C48C; --win: #4FC98A; --loss: #F0776C; --star: #F0BE4A;
+    --hit: #F0BE4A; --lead-edge: #F0C43C; --scrim: rgba(0,0,0,.66);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #16150F; --card: #232019; --card-2: #1C1A14;
+  --ink: #F2F0E6; --line: #0D0C09; --hair: #3A352B; --muted: #999285;
+  --live: #48C48C; --win: #4FC98A; --loss: #F0776C; --star: #F0BE4A;
+  --hit: #F0BE4A; --lead-edge: #F0C43C; --scrim: rgba(0,0,0,.66);
+  color-scheme: dark;
+}
+/* Compact should read as a different view, not a nudge — but it still has
+   to be legible on its own, so the type only tightens about as far as the
+   old default while the row itself loses a third of its height. */
+:root[data-density="compact"] {
+  --row-h:   3rem;
+  --row-gap: .2rem;
+  --icon:    31px;
+  --rk:      2.05rem;
+  --nm:      .92rem;
+  --sub:     .64rem;
+  --num:     .86rem;
+  --bar:     8px;
+  --pad-x:   .8rem;
+  --col-gap: .55rem;
+}
+
+* { box-sizing: border-box; }
+/* Hold the scrollbar gutter open so locking body scroll behind the match
+   detail doesn't shunt the page sideways as it opens. */
+html { scrollbar-gutter: stable; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--paper); color: var(--ink);
+  font-family: var(--sans); font-size: 17px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; border-radius: 6px; }
+.sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.shell { max-width: 1280px; margin: 0 auto; padding: 1.6rem clamp(.9rem,3vw,2rem) 5rem; }
+
+/* Everything below the header, on the way in. Switching division or section
+   replaces the whole block at once, and without this the swap is a jump cut:
+   one set of rows is simply a different set of rows. Growing the arriving
+   block in from 98.5% says the page changed under a header that didn't.
+
+   Enter only, the same as the match modal — React has already dropped the
+   outgoing content by the time the new key mounts, so there is nothing left
+   to shrink. Animating *from* a state and never setting one is also what
+   makes the blanket reduced-motion rule below leave a correct page rather
+   than a permanently scaled one. The transform lasts .22s and then is gone,
+   which is why the bracket's modal is kept outside this: `position: fixed`
+   resolves against a transformed ancestor while one exists. */
+.viewswap { animation: viewin .22s cubic-bezier(.2,.85,.3,1); }
+@keyframes viewin { from { opacity: 0; transform: scale(.985); } }
+
+/* ── shared control atoms ────────────────────────────────── */
+.pill {
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 10px;
+  padding: .28rem .7rem; font-size: .8rem; font-weight: 700;
+  display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap;
+}
+.pill:hover { background: var(--card-2); }
+.pill:disabled { opacity: .45; cursor: not-allowed; }
+.pill.on { background: var(--star); color: var(--on-lead); }
+
+/* Density switch. The chevrons flip: apart for roomy, together for compact.
+   Driven off the button's own aria-pressed so both pages share one rule and
+   nothing has to be kept in sync in JS. */
+.densbtn { padding: .28rem .45rem; }
+.densbtn .dens { flex: none; transition: transform .12s ease; }
+.densbtn .ch {
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  transition: transform .32s cubic-bezier(.2, .85, .3, 1);
+}
+/* Each chevron flips about its own centre and slides inward: pointing away
+   from each other means roomy, pointing at each other means compact. */
+.densbtn .up { transform-origin: 10px 4.9px; }
+.densbtn .dn { transform-origin: 10px 15.1px; }
+.densbtn[aria-pressed="true"] .up { transform: translateY(1.6px) scaleY(-1); }
+.densbtn[aria-pressed="true"] .dn { transform: translateY(-1.6px) scaleY(-1); }
+.densbtn:active .dens { transform: scale(.9); }
+
+@media (prefers-reduced-motion: reduce) {
+  .densbtn .ch, .densbtn .dens { transition: none; }
+}
+.badge {
+  background: var(--ink); color: var(--paper); border-radius: 5px;
+  font-family: var(--mono); font-size: .56rem; font-weight: 700;
+  padding: .2rem .42rem; letter-spacing: .1em; white-space: nowrap;
+}
+.meta {
+  font-family: var(--mono); font-size: .68rem; color: var(--muted);
+  display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap;
+}
+.meta b { color: var(--ink); font-weight: 700; }
+.livedot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); flex: none; }
+.livedot.stale { background: var(--star); }
+.livedot.done { background: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .livedot.beat { animation: pulse 2.4s ease-in-out infinite; }
+}
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+
+/* The division switch. The fill behind the chosen one is a single element
+   that slides between the three rather than a background appearing on one
+   button as it leaves another — so the switch reads as one thing moving.
+   `flex: 1 1 0` is what makes the thumb's arithmetic work: the three
+   divisions are the same length but not the same width, and the slide can
+   only be a multiple of one track if the tracks are equal. */
+.segs {
+  position: relative; display: flex;
+  background: var(--card); border: 1.5px solid var(--line);
+  border-radius: 9px; padding: 2px;
+}
+.segs .thumb {
+  position: absolute; top: 2px; bottom: 2px; left: 2px;
+  width: calc((100% - 4px) / var(--n));
+  transform: translateX(calc(var(--i) * 100%));
+  background: var(--lead); border-radius: 6px;
+  transition: transform .28s cubic-bezier(.2,.85,.3,1);
+}
+.segs button {
+  position: relative;   /* over the thumb, which is earlier in the source */
+  flex: 1 1 0;
+  background: transparent; border: 0; border-radius: 6px;
+  padding: .2rem .8rem; font-size: .82rem; font-weight: 700; color: var(--muted);
+  transition: color .2s ease;
+}
+/* The fill is the thumb's job now; this only has to hand over the ink. */
+.segs button[aria-pressed="true"] { color: var(--on-lead); }
+.search {
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 10px;
+  padding: .3rem .75rem; font-size: .82rem; min-width: 0; flex: 1 1 130px;
+}
+.search::placeholder { color: var(--muted); }
+
+/* round progress — one mark per round, the event's shape at a glance.
+   Cut marks are shorter and rounder so the two phases read as two groups
+   even in the corner of the eye; the divider carries the rest. */
+.prog { display: inline-flex; gap: 2px; align-items: center; }
+.prog i { width: 10px; height: 5px; border-radius: 2px; background: var(--hair); display: block; }
+.prog i.done { background: var(--ink); }
+.prog i.now { background: var(--live); }
+.prog i.cut { width: 6px; border-radius: 3px; }
+.prog i.gap { width: 1px; height: 9px; border-radius: 0; background: var(--line); margin: 0 3px; }
+
+/* The round in progress is the one thing here that changes on its own —
+   the pulse says "still running" without another word of label. */
+@media (prefers-reduced-motion: no-preference) {
+  .prog i.now { animation: pulse 1.8s ease-in-out infinite; }
+}
+
+/* ── header A: event as headline ─────────────────────────── */
+.masthead { display: flex; flex-direction: column; gap: .6rem; margin-bottom: .9rem; }
+.mast-top { display: flex; align-items: flex-start; gap: .7rem; flex-wrap: wrap; }
+.mast-id { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.mast-id .l1 { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.mast-id .nm {
+  font-size: clamp(1.15rem,2.6vw,1.5rem); font-weight: 800;
+  letter-spacing: -.03em; line-height: 1.05;
+}
+.mast-id .l2 { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
+/* The live column: state on top, then anything qualifying it underneath.
+   Right-aligned so the stack reads as one block against the right edge. */
+.mast-live {
+  margin-left: auto; display: flex; flex-direction: column;
+  align-items: flex-end; gap: .4rem;
+}
+.mast-live .live-row {
+  display: flex; align-items: center; gap: .5rem;
+  flex-wrap: wrap; justify-content: flex-end;
+}
+
+/* Tables still to report. Amber because it's a caveat, not an alarm: the
+   standings below are real, they just aren't settled for this round yet —
+   and the dot keeps the same pulse as the live one, for the same reason. */
+.tables {
+  font-family: var(--mono); font-size: .66rem; font-weight: 700;
+  padding: .2rem .55rem; gap: .32rem; border-color: var(--star);
+}
+.tables:hover { background: var(--card); }
+
+.mast-ctl {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  border-top: 1px solid var(--hair); padding-top: .65rem;
+}
+.mast-ctl .right { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
+
+.nav { display: flex; gap: .3rem; }
+.nav a {
+  font-size: .82rem; font-weight: 700; text-decoration: none; color: var(--muted);
+  padding: .2rem .6rem; border-radius: 8px; border: 1.5px solid transparent;
+  /* The section switch is a navigation, so the new page's link arrives
+     already current and this only ever runs on hover. The arriving content
+     is what carries that movement — see .viewswap. */
+  transition: color .15s ease, background-color .15s ease, border-color .15s ease;
+}
+.nav a:hover { color: var(--ink); }
+.nav a[aria-current="page"] { color: var(--ink); background: var(--card); border-color: var(--line); }
+
+.banner {
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 12px;
+  padding: .6rem .8rem; font-size: .84rem; margin-bottom: .8rem; color: var(--muted);
+}
+.banner b { color: var(--ink); font-weight: 700; }
+.hint {
+  font-size: .82rem; color: var(--muted); margin-bottom: .6rem;
+  display: flex; align-items: center; gap: .5rem; padding: 0 .3rem;
+}
+.hint b { color: var(--ink); font-weight: 700; }
+.hint button {
+  margin-left: auto; background: transparent; border: 1.5px solid var(--hair);
+  border-radius: 8px; padding: .16rem .5rem; font-size: .76rem; color: var(--muted);
+}
+.hint button:hover { color: var(--ink); border-color: var(--ink); }
+
+/* ── standings table ─────────────────────────────────────── */
+.key {
+  display: grid; align-items: center; gap: var(--col-gap);
+  grid-template-columns: var(--grid-cols);
+  padding: 0 var(--pad-x) .28rem .24rem;
+  font-family: var(--mono); font-size: .56rem; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+.rows { display: flex; flex-direction: column; gap: var(--row-gap); }
+.row {
+  display: grid; align-items: center; gap: var(--col-gap);
+  grid-template-columns: var(--grid-cols);
+  width: 100%; text-align: left; min-height: var(--row-h);
+  background: var(--card); border: 1px solid var(--hair); border-radius: 999px;
+  padding: .2rem var(--pad-x) .2rem .24rem;
+  /* The colour pair is slower than the border because it only ever moves
+     once — the moment the event finishes and the leader fills gold. The
+     radius is on the panel's clock, not the border's: the pill unrolling
+     into a card is the same movement as the panel growing under it. */
+  transition: border-color .12s, box-shadow .12s, border-radius .24s ease,
+              background-color .3s ease, color .3s ease;
+}
+.row:hover { border-color: var(--line); box-shadow: 0 2px 8px -2px rgba(0,0,0,.22); }
+.row.open { border-color: var(--line); border-radius: 22px; box-shadow: 0 2px 8px -2px rgba(0,0,0,.22); }
+.row.top { border-color: var(--muted); }
+
+/* ── the leader ───────────────────────────────────────────────
+   Gold means a result, so while the event is still running rank 1 is the
+   same card as rank 2 — same fill, same border width, same numeral in the
+   disc — and the gold hairline is the only thing marking it. That hairline
+   is the whole signal, so hovering and opening the row must not paint over
+   it the way they do for everyone else. */
+.row.lead { border-color: var(--lead-edge); }
+.row.lead:hover, .row.lead.open { border-color: var(--lead-edge); }
+
+/* Finished: the card fills, and the ink on it is the fixed --on-lead in both
+   themes. Picking up the themed --ink here is what once made the leader row
+   white-on-yellow in dark mode. */
+.row.lead.crowned { background: var(--lead); border-color: var(--line); color: var(--on-lead); }
+.row.lead.crowned:hover, .row.lead.crowned.open { border-color: var(--line); }
+.row.lead.crowned .nm, .row.lead.crowned .pts, .row.lead.crowned .rec,
+.row.lead.crowned .rec .w, .row.lead.crowned .rec .l { color: var(--on-lead); }
+.row.lead.crowned .cc, .row.lead.crowned .res, .row.lead.crowned .sub { color: var(--lead-dim); }
+.row.lead.crowned .star { color: #7A6620; }
+.row.lead.crowned .star.on { color: var(--on-lead); }
+
+.rk {
+  width: var(--rk); height: var(--rk); border-radius: 50%; display: grid; place-items: center;
+  font-weight: 800; font-size: calc(var(--rk) * .34); background: var(--card-2); color: var(--muted);
+  font-variant-numeric: tabular-nums; flex: none;
+  transition: background-color .3s ease, color .3s ease;
+}
+.row.top .rk { background: var(--ink); color: var(--paper); }
+.row.lead.crowned .rk { background: var(--on-lead); color: var(--lead); }
+
+/* Rank 1's disc holds the numeral and the crown in the same grid cell — the
+   disc is already `place-items: center`, so one grid-area stacks them dead
+   centre on each other — and the swap is the two of them trading places.
+   The crown overshoots very slightly on the way in; the numeral doesn't, so
+   it reads as the crown arriving rather than the pair rocking. */
+.rk.swap > * { grid-area: 1 / 1; }
+.rk .num, .rk .crown {
+  transition: opacity .26s ease, transform .3s cubic-bezier(.2,.9,.3,1.35);
+}
+.rk .crown {
+  width: calc(var(--rk) * .52); height: calc(var(--rk) * .52); display: block;
+  opacity: 0; transform: scale(.5) rotate(-14deg);
+}
+.rk.crowned .num { opacity: 0; transform: scale(.5); }
+.rk.crowned .crown { opacity: 1; transform: scale(1) rotate(0deg); }
+
+.star {
+  background: none; border: 0; padding: .1rem; color: var(--muted);
+  display: grid; place-items: center; line-height: 0; border-radius: 6px;
+}
+.star:hover, .star.on { color: var(--star); }
+/* The SVG carries width/height attributes; CSS wins, so the star tracks
+   density with everything else in the row. */
+.star svg { width: calc(var(--nm) * 1.05); height: calc(var(--nm) * 1.05); }
+
+.who { display: flex; flex-direction: column; gap: .04rem; min-width: 0; line-height: 1.3; }
+.who .l1 { display: flex; align-items: baseline; gap: .35rem; min-width: 0; }
+.who .nm { font-weight: 700; font-size: var(--nm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who .cc { font-family: var(--mono); font-size: calc(var(--sub) * .88); color: var(--muted); flex: none; }
+.who .sub {
+  font-family: var(--mono); font-size: var(--sub); color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.team { display: flex; gap: var(--mon-gap); }
+.mon {
+  width: var(--icon); height: var(--icon); border-radius: 50%;;
+  display: grid; place-items: center; overflow: hidden; flex: none;
+  background: var(--card-2); border: 1px solid var(--hair);
+}
+/* Only once the card is gold — a live leader's team sits on the same card
+   fill as everyone else's, so it takes the same neutral circles. */
+.row.lead.crowned .mon { background: #FBE9A8; border-color: #D6B23A; }
+/* Inset the sprite rather than filling the circle — wide artwork was
+   running into the ring. Proportional so it holds in compact too. */
+.mon img { width: calc(var(--icon) * .82); height: calc(var(--icon) * .82); object-fit: contain; display: block; }
+.mon .tag { font-family: var(--mono); font-size: .48rem; font-weight: 700; color: var(--muted); }
+
+/* The four stat columns are equal width and their contents differ in
+   length, so they centre: leftover space splits either side of each value
+   instead of pooling on one edge and making the gaps read as uneven. */
+.rec, .pts, .res, .key .h-rec, .key .r { text-align: center; }
+.rec { font-family: var(--mono); font-size: calc(var(--num) * .86); font-weight: 600; font-variant-numeric: tabular-nums; }
+.rec .w { color: var(--win); }
+.rec .l { color: var(--loss); }
+.pts { font-family: var(--mono); font-weight: 700; font-size: var(--num); font-variant-numeric: tabular-nums; }
+.res { font-family: var(--mono); font-size: calc(var(--num) * .8); color: var(--muted); font-variant-numeric: tabular-nums; }
+.noteam { font-size: calc(var(--num) * .8); color: var(--muted); font-style: italic; }
+
+.cutline {
+  display: flex; align-items: center; gap: .5rem; margin: .45rem 0 .4rem;
+  font-family: var(--mono); font-size: .58rem; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--live);
+}
+.cutline::before, .cutline::after { content: ""; height: 2px; background: var(--live); opacity: .4; border-radius: 2px; }
+.cutline::before { width: 1.4rem; }
+.cutline::after { flex: 1; }
+
+/* ── grow / shrink ────────────────────────────────────────────
+   How every panel that unrolls out of a row opens and closes.
+
+   The height is a grid track going 0fr → 1fr. That's the one way to
+   transition to a height nothing has measured — the child reports its
+   natural size, the track interpolates towards it, and no max-height has to
+   be guessed above the tallest team list anyone might bring. The clip is a
+   separate element because the panel inside it carries margins, and a margin
+   isn't clipped by the box it hangs off.
+
+   Nothing here transforms. The explain popovers inside these panels are
+   `position: fixed` precisely so they can escape this overflow, and a
+   transformed ancestor — even one present for a fifth of a second — would
+   make them resolve against this box instead. Opacity opens a stacking
+   context, not a containing block, so the fade is safe.
+
+   .24s here is COLLAPSE_MS in shared.tsx. The two have to agree: React
+   unmounts the panel off that timer, and a short one would cut the shrink
+   off halfway. */
+.collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .24s cubic-bezier(.2,.85,.3,1); }
+.collapse.open { grid-template-rows: 1fr; }
+/* No padding on the clip, ever. Everything is border-box, so a padded box
+   told to be 0 high stops at the height of its own padding and the panel
+   never quite shuts. The panel's own margins do that spacing instead —
+   overflow: hidden makes this a block formatting context, so they're held
+   inside the track rather than escaping past it. */
+.collapse > .clip { overflow: hidden; min-height: 0; }
+/* The contents fade a touch behind the height so the panel doesn't read as
+   a shutter — by the time there's room, there's something in it. */
+.collapse > .clip > * { opacity: 0; transition: opacity .2s ease .04s; }
+.collapse.open > .clip > * { opacity: 1; }
+
+/* In the standings the panel is a flex child of .rows and so picks up a
+   row-gap on each side; in the usage list it sits inside the <li> and picks
+   up none. Cancelling one gap here and paying it back on the panel's own
+   margin is what makes the closed panel occupy exactly nothing — otherwise
+   every row below would drop a gap the instant it unmounted. */
+.rows > .collapse { margin-bottom: calc(var(--row-gap) * -1); }
+.rows > .collapse .detail { margin-bottom: calc(.1rem + var(--row-gap)); }
+
+/* ── expanded detail ─────────────────────────────────────── */
+.detail {
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 14px;
+  margin: .3rem 0 .1rem; padding: .8rem .9rem;
+  display: grid; grid-template-columns: minmax(0,.85fr) minmax(0,1.15fr); gap: 1.1rem;
+}
+@media (max-width: 760px) { .detail { grid-template-columns: minmax(0,1fr); } }
+.detail h3, .mdp h3 {
+  margin: 0 0 .45rem; font-family: var(--mono); font-size: .56rem; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+}
+.rounds { display: flex; flex-direction: column; gap: .2rem; }
+.rd { display: grid; grid-template-columns: 1.7rem 1.6rem 1fr auto; gap: .5rem; align-items: center; font-size: .8rem; }
+.rd .r { font-family: var(--mono); font-size: .64rem; color: var(--muted); }
+.rd .v {
+  font-family: var(--mono); font-size: .66rem; font-weight: 700; text-align: center;
+  border-radius: 5px; padding: .06rem 0; border: 1px solid var(--line); color: #fff;
+}
+.rd .v.W { background: var(--win); }
+.rd .v.L { background: var(--loss); }
+.rd .v.T { background: var(--star); color: var(--on-lead); }
+/* A cut table still out. Same size as W/L/T so nothing shifts when the
+   result lands, and the same dot as the masthead so "live" reads alike. */
+.rd .v.P { background: var(--card); border-color: var(--hair); display: grid; place-items: center; }
+.rd .o { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd .o.link { background: none; border: 0; padding: 0; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
+.rd .tbl { font-family: var(--mono); font-size: .62rem; color: var(--muted); }
+
+.mons { display: grid; grid-template-columns: repeat(auto-fill,minmax(184px,1fr)); gap: .5rem; }
+.moncard {
+  background: var(--card); border: 1px solid var(--hair); border-radius: 12px;
+  padding: .5rem .6rem; display: flex; gap: .55rem; align-items: flex-start;
+  position: relative;
+}
+/* The jump to this species' usage entry. Absolute rather than a third flex
+   child: the card's first line is the 48px sprite and nothing else, so the
+   top right is dead space and the link costs the text no width. Muted until
+   it's wanted — the card is already dense, and this is an offer, not a
+   label. */
+.tousage {
+  position: absolute; top: .34rem; right: .4rem;
+  color: var(--muted); display: grid; place-items: center; line-height: 0;
+  padding: .18rem; border-radius: 7px; text-decoration: none;
+  opacity: .55; transition: opacity .12s ease, color .12s ease;
+}
+.moncard:hover .tousage, .tousage:hover, .tousage:focus-visible { opacity: 1; }
+.tousage:hover, .tousage:focus-visible { color: var(--ink); background: var(--card-2); }
+.moncard .art { width: 48px; height: 48px; flex: none; display: grid; place-items: center; }
+.moncard .art img { width: 48px; height: 48px; object-fit: contain; }
+.moncard .info { min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
+.moncard .n { font-size: .8rem; font-weight: 800; display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+.mega {
+  font-family: var(--mono); font-size: .52rem; font-weight: 700; letter-spacing: .1em;
+  background: var(--ink); color: var(--paper); border-radius: 4px; padding: .06rem .28rem;
+}
+.typepills { display: flex; gap: .22rem; margin: .1rem 0; }
+.typepill {
+  display: inline-flex; align-items: center; gap: .2rem; color: #fff;
+  font-family: var(--mono); font-size: .52rem; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase;
+  border-radius: 999px; padding: .1rem .38rem .1rem .26rem;
+}
+.moncard .d { font-size: .68rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.moncard .held { display: flex; align-items: center; gap: .28rem; font-size: .72rem; font-weight: 700; }
+.moncard .held img { width: 20px; height: 20px; object-fit: contain; }
+/* ItemArt's fallback wherever it renders — the team cards and the usage
+   panel both. One rule, so the two can't drift apart; only the size differs
+   and that's set at each call site. The white is fixed in both themes on
+   purpose: it's a polished stone, not a surface that follows the paper. */
+.stone {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+  background: radial-gradient(circle at 32% 30%, #fff, var(--muted)); border: 1px solid var(--hair);
+}
+/* The same fallback for every other item PokéAPI has no art for — Fairy
+   Feather, Booster Energy, the Punching Glove, most of gen 9. An empty
+   inventory slot: the hairline is the whole mark, which is how the rest of
+   this page draws a container anyway, and it holds on either paper because
+   --hair is themed. Deliberately not the dot above — that shape says the item
+   is a Mega Stone, and most of these aren't. */
+.noart {
+  width: 14px; height: 14px; border-radius: 4px; flex: none;
+  background: var(--card-2); border: 1px solid var(--hair);
+}
+.moncard .mv { font-family: var(--mono); font-size: .62rem; color: var(--muted); line-height: 1.4; margin-top: .12rem; }
+
+/* ── search hits ──────────────────────────────────────────────
+   Only the sprites carry the mark. A name, IGN or country match is already
+   legible in the row's own text, but a species or item match is invisible
+   there — the ring on the matching slot is the whole answer. */
+.mon.hit { border-color: var(--hit); border-width: 1.5px; }
+/* A finished leader's row is that same yellow, so the ring inverts to ink
+   there rather than disappearing into the background. A running one is on
+   the ordinary card fill and keeps the ordinary ring. */
+.row.lead.crowned .mon.hit { border-color: var(--on-lead); }
+.moncard.hit { border-color: var(--hit); }
+
+.empty { padding: 2.2rem 1rem; text-align: center; color: var(--muted); font-size: .88rem; }
+
+/* ── usage page ──────────────────────────────────────────── */
+.usagelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--row-gap); }
+.usagerow {
+  width: 100%; display: grid; align-items: center;
+  grid-template-columns:
+    var(--rk) var(--icon) minmax(140px,1.1fr) minmax(70px,1.9fr)
+    repeat(2, var(--stat));   /* count · pct — same block as the standings */
+  gap: var(--col-gap); padding: .2rem var(--pad-x) .2rem .24rem; min-height: var(--row-h);
+  background: var(--card); border: 1px solid var(--hair); border-radius: 999px;
+  text-align: left; color: inherit;
+  transition: border-color .12s, box-shadow .12s, border-radius .24s ease;
+}
+.usagerow:hover { border-color: var(--line); box-shadow: 0 2px 8px -2px rgba(0,0,0,.22); }
+.usagerow .pos {
+  width: var(--rk); height: var(--rk); border-radius: 50%; display: grid; place-items: center;
+  background: var(--card-2); color: var(--muted); font-weight: 800; font-size: calc(var(--rk) * .32);
+  font-variant-numeric: tabular-nums;
+}
+.usagerow .label { font-weight: 700; font-size: calc(var(--nm) * .95); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usagerow .bar { height: var(--bar); border-radius: 999px; background: var(--card-2); overflow: hidden; display: block; }
+.usagerow .fill { display: block; height: 100%; border-radius: 999px; }
+.usagerow .count, .usagerow .pct { text-align: center; }
+.usagerow .count { font-family: var(--mono); font-weight: 700; font-size: calc(var(--num) * .92); font-variant-numeric: tabular-nums; }
+.usagerow .pct { font-family: var(--mono); font-size: calc(var(--num) * .8); color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) {
+  .usagerow { grid-template-columns: var(--rk) var(--icon) minmax(0,1fr) var(--stat); }
+  .usagerow .bar, .usagerow .pct { display: none; }
+}
+
+/* An open row unrolls into a card the same way a standings row does. */
+.usagerow.open { border-color: var(--line); border-radius: 22px; }
+
+/* Reuses .detail wholesale — fill, hairline, radius and the h3 micro-label.
+   The sections are equal and narrow, so the only thing that differs from the
+   standings panel is the column count. */
+.usagedetail { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+@media (max-width: 760px) { .usagedetail { grid-template-columns: minmax(0,1fr); } }
+
+/* Two sections that read as one column — Abilities and the Mega Abilities that
+   only appear on species someone actually Mega'd. They share a cell so the
+   second can't be flung to the next row when auto-fit changes the count. Same
+   gap as the grid, so the vertical rhythm matches the horizontal. */
+.stack { display: flex; flex-direction: column; gap: 1.1rem; align-self: start; }
+
+.tally { display: flex; flex-direction: column; gap: .16rem; }
+.tallyrow {
+  display: grid; grid-template-columns: minmax(0,1fr) auto;
+  gap: .4rem; align-items: center; font-size: .74rem;
+}
+/* The bar and the label are one element: --w is set per row in the JSX, and
+   the gradient paints that much of the pill. Keeps it a menu, not a table. */
+.tallyrow .t {
+  min-width: 0; padding: .12rem .45rem; border-radius: 999px;
+  background: linear-gradient(var(--card), var(--card)) left center / var(--w, 0%) 100% no-repeat;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tallyrow .n {
+  font-family: var(--mono); font-size: .62rem; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Rows that carry art on the left — item sprites, teammate icons. Re-scoping
+   --icon is most of the override: .mon and .mon img both size off it, and the
+   item slot below is written in the same token so the two stay in step. */
+.tallyrow.ico { grid-template-columns: var(--icon) minmax(0,1fr) auto; --icon: 22px; }
+.tallyrow .itemart {
+  width: var(--icon); height: var(--icon);
+  display: grid; place-items: center;
+}
+.tallyrow .itemart img { width: 100%; height: 100%; object-fit: contain; }
+/* PokéAPI has no art past gen 8, so those items fall back to the shared
+   .stone dot or .noart slot — sized down a little to sit inside the icon
+   slot. */
+.tallyrow .itemart .stone,
+.tallyrow .itemart .noart { width: 12px; height: 12px; }
+
+/* What a nature actually does, riding just behind its name. Mono and small
+   so the name still leads — this is an annotation, not a second column. */
+.nat {
+  font-family: var(--mono); font-size: .56rem; font-weight: 700;
+  letter-spacing: .03em; margin-left: .34rem; white-space: nowrap;
+}
+.nat .up { color: var(--buff); }
+.nat .dn { color: var(--nerf); margin-left: .26rem; }
+/* The five that cancel out. Nothing moved, so nothing is coloured. */
+.nat.none { color: var(--muted); font-weight: 400; font-style: italic; }
+.nodata { margin: 0; font-size: .72rem; color: var(--muted); font-style: italic; }
+
+/* ── explain popovers ────────────────────────────────────────
+   A held item, an ability and four moves are six proper nouns, and to
+   anyone who hasn't got the format memorised four of them say nothing.
+   Hovering one answers it in place.
+
+   No new colour: this is the picker's and the match modal's floating panel,
+   to the pixel, because a third kind of floating card would read as a
+   different app. That also means it needs nothing from the dark block —
+   every value in it is already themed.
+   ──────────────────────────────────────────────────────────── */
+
+/* The wrapper only exists to hang the panel next to the trigger without
+   nesting it inside a button. `contents` keeps it out of the layout
+   entirely, so the trigger stays a flex item of .held and stays inline in
+   the middle of a move list. */
+.termwrap { display: contents; }
+
+.term {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0;
+  text-align: inherit; cursor: help;
+  /* Dotted, and off the hairline colour: this has to read as "there is
+     more here" without competing with the name it sits under, and it
+     appears four times per Pokémon. */
+  text-decoration: underline dotted;
+  text-decoration-color: var(--hair);
+  text-underline-offset: 2px;
+  transition: color .12s, text-decoration-color .12s;
+}
+.term:hover, .term.on { color: var(--ink); text-decoration-color: var(--muted); }
+/* Tighter than the page default. These sit inside .tallyrow .t and
+   .moncard .d, both of which clip their overflow, so a 3px ring at 2px
+   offset would be cropped down one side. */
+.term:focus-visible { outline-width: 2px; outline-offset: 1px; border-radius: 4px; }
+/* The " / " between two moves is punctuation, not a term. */
+.moncard .mv .sep { text-decoration: none; }
+
+.xpop {
+  position: fixed; z-index: 120;
+  width: min(300px, calc(100vw - 16px));
+  display: flex; flex-direction: column; gap: .3rem;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 14px;
+  padding: .55rem .7rem .6rem;
+  box-shadow: 0 18px 46px -20px rgba(0,0,0,.5);
+  /* It is never a hover target of its own: the pointer leaving the word is
+     what closes it, and letting it take the pointer would trap that. */
+  pointer-events: none;
+  /* Every one of these undoes something the panel would otherwise inherit
+     from the word it explains — the mono of a move list, the 700 of a held
+     item, the nowrap and uppercase of a tally row. */
+  font-family: var(--sans); font-size: .74rem; font-weight: 400;
+  letter-spacing: normal; text-transform: none; text-align: left;
+  white-space: normal; line-height: 1.45; color: var(--ink);
+}
+.xpop .xname { font-size: .82rem; font-weight: 800; line-height: 1.2; }
+.xpop .xchips { display: flex; align-items: center; gap: .25rem; }
+/* Physical / special / status. Neutral on purpose — the type pill beside it
+   is already carrying the colour, and two coloured chips in a 300px panel
+   would be a stripe. */
+.xclass {
+  font-family: var(--mono); font-size: .52rem; font-weight: 700;
+  letter-spacing: .07em; border: 1px solid var(--hair); color: var(--muted);
+  border-radius: 999px; padding: .1rem .38rem;
+}
+.xpop .xstats {
+  font-family: var(--mono); font-size: .58rem; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.xpop .xstats b { color: var(--ink); font-weight: 700; }
+/* Priority is the one figure here that is good or bad news rather than just
+   a number, so it takes the same green and red a raised and a cut stat do. */
+.xpop .xstats b.up { color: var(--buff); }
+.xpop .xstats b.dn { color: var(--nerf); }
+.xpop .xstats i {
+  display: inline-block; width: 1px; height: .6rem; vertical-align: -.04rem;
+  background: var(--hair); margin: 0 .34rem;
+}
+.xpop .xtext { color: var(--muted); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .xpop { animation: xpop .12s ease-out; }
+  /* Rises from the word when it hangs below it, drops from it when the
+     panel has been flipped above — either way it comes out of the word. */
+  .xpop.up { animation-name: xpopup; }
+}
+@keyframes xpop   { from { opacity: 0; transform: translateY(-3px); } }
+@keyframes xpopup { from { opacity: 0; transform: translateY(3px); } }
+
+/* ── bracket ─────────────────────────────────────────────────
+   One grid for the whole tree. Each card spans TWO rows, so the centre of
+   a card sitting on slot n+0.5 lands exactly between its two children —
+   the parent's position needs no measurement, just arithmetic done in
+   lib/bracket.ts. Wires are drawn by the child: a single element whose
+   border-right is the vertical run and whose border-top/bottom is the
+   horizontal one, so one box makes the whole elbow. Every length here is
+   a multiple of --bslot, which is why the picture survives the density
+   switch without a single compact-specific rule.
+   ─────────────────────────────────────────────────────────── */
+.bwrap { overflow-x: auto; padding-bottom: .4rem; }
+.bhead, .bracket { min-width: max-content; }
+.bhead {
+  display: grid;
+  grid-template-columns: repeat(var(--bcols), var(--bcol));
+  column-gap: var(--bgap);
+  margin: .2rem 0 .55rem;
+}
+/* A hairline tick down the left of each stage label, so the columns read as
+   separate rounds rather than one run-on strip of headings. Same 1.5px
+   hairline the cards use. */
+.bstage {
+  display: flex; flex-direction: column; gap: .1rem;
+  border-left: 1.5px solid var(--hair);
+  padding-left: .5rem;
+}
+.bstage b {
+  font-family: var(--mono); font-size: .58rem; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+}
+.bstage .sub { font-size: var(--sub); color: var(--muted); }
+
+.bracket {
+  display: grid;
+  grid-template-columns: repeat(var(--bcols), var(--bcol));
+  grid-auto-rows: var(--bunit);
+  column-gap: var(--bgap);
+  row-gap: var(--brgap);
+}
+/* No tree could be built, so nothing should look like one. */
+.bracket.unlinked .wire, .bracket.unlinked .bnode.joined::before { display: none; }
+
+.bnode {
+  position: relative;
+  display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  background: var(--card); border: 1px solid var(--hair); border-radius: 12px;
+  padding: .18rem .1rem; overflow: visible;
+}
+.bnode.live { border-color: var(--live); }
+
+/* Scoped to the element, not a class, so BracketSkeleton's div.bnode.sk
+   stays inert without needing a counter-rule. Same hover gesture as .row —
+   the app has one "this is clickable" signal and this is it. */
+button.bnode { width: 100%; text-align: left; color: inherit; font: inherit; }
+button.bnode:hover { border-color: var(--line); box-shadow: 0 2px 8px -2px rgba(0,0,0,.22); }
+/* Hover is more specific than .bnode.live, so a live card would lose its
+   green edge on hover without this. */
+button.bnode.live:hover { border-color: var(--live); }
+/* The global focus ring forces 6px; the card keeps its own radius. */
+button.bnode:focus-visible { border-radius: 12px; }
+
+.side {
+  display: grid; align-items: center; gap: .4rem;
+  grid-template-columns: calc(var(--nm) * 1.5) minmax(0,1fr) auto auto auto;
+  padding: .1rem .34rem; border-radius: 8px; min-width: 0;
+}
+.side.out { opacity: .55; }
+.side.bye { opacity: .4; }
+.side .seed {
+  font-family: var(--mono); font-size: calc(var(--num) * .68); font-weight: 700;
+  font-variant-numeric: tabular-nums; text-align: center; color: var(--muted);
+  background: var(--card-2); border-radius: 999px; padding: .1rem 0;
+}
+.side .nm {
+  font-weight: 700; font-size: calc(var(--nm) * .82);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.side.win .nm { color: var(--ink); }
+.side.bye .nm { font-weight: 500; font-style: italic; }
+/* The bye's seed cell is a spacer, not a rank — no disc behind it. */
+.side.bye .seed { background: none; }
+.side .cc {
+  font-family: var(--mono); font-size: var(--sub); color: var(--muted);
+  letter-spacing: .06em;
+}
+.side .rec {
+  font-family: var(--mono); font-size: calc(var(--num) * .7); color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Shared with the match detail's identity line: the result chip is the same
+   fact in both places, so it must be one rule rather than a third copy. */
+.side .v, .mdwho .v {
+  font-family: var(--mono); font-size: .6rem; font-weight: 700; text-align: center;
+  width: 1.4rem; border-radius: 5px; padding: .04rem 0;
+  border: 1px solid var(--line); color: #fff;
+}
+.side .v.W, .mdwho .v.W { background: var(--win); }
+.side .v.L, .mdwho .v.L { background: var(--loss); }
+.side .v.T, .mdwho .v.T { background: var(--star); color: var(--on-lead); }
+.side .v.P, .mdwho .v.P { background: var(--card); border-color: var(--hair); display: grid; place-items: center; }
+.side.bye .v { display: none; }
+
+/* The parent's half of the gutter — a stub reaching left to meet the
+   verticals the two children drew. */
+.bnode.joined::before {
+  content: ""; position: absolute; right: 100%; top: 50%;
+  width: calc(var(--bgap) / 2); border-top: 2px solid var(--hair);
+  /* It hangs outside the card, so without this it would silently extend
+     the button's hit area halfway across the gutter. */
+  pointer-events: none;
+}
+/* The child's half: out to the middle of the gutter, then up or down to
+   the parent's centre. --dy is unitless and set inline, in slots. */
+.bnode .wire {
+  position: absolute; left: 100%; top: 50%;
+  width: calc(var(--bgap) / 2);
+  height: calc(var(--dy) * var(--bslot));
+  border-right: 2px solid var(--hair);
+  pointer-events: none;
+}
+.bnode .wire.dn { border-top: 2px solid var(--hair); }
+.bnode .wire.up { border-bottom: 2px solid var(--hair); transform: translateY(-100%); }
+
+/* ── rounds still to come ────────────────────────────────────
+   A round the bracket guarantees but pokedata hasn't paired. Everything
+   about it is unfilled and dashed: no background, no result chip with a
+   letter in it, and — since it isn't a button — no hover. Solid and filled
+   on this page mean something happened, and nothing here has.
+   ─────────────────────────────────────────────────────────── */
+.bnode.ghost { background: none; border-style: dashed; }
+.side.pend { opacity: .6; }
+.side.pend .nm { font-weight: 500; }
+/* An unfilled seat: no rank disc behind an empty cell, and the placeholder
+   reads as a label rather than a name. Same gesture as .side.bye. */
+.side.tbd .nm { font-style: italic; color: var(--muted); }
+.side.tbd .seed { background: none; }
+/* Hairline-faint, and without .beat — a pulse would claim the match is being
+   played. The chip stays, so the seat reads as waiting rather than absent. */
+.livedot.pend { background: var(--hair); }
+/* The elbow into a projected card is exactly as provisional as the card it
+   points at, so it can't be drawn as a settled result. */
+.bnode .wire.pend { border-right-style: dashed; }
+.bnode .wire.dn.pend { border-top-style: dashed; }
+.bnode .wire.up.pend { border-bottom-style: dashed; }
+.bnode.ghost.joined::before { border-top-style: dashed; }
+/* The column tick carries the same dashed cue as the cards under it. Fading
+   the heading itself was the other option and it cost more contrast than the
+   distinction was worth. */
+.bstage.pend { border-left-style: dashed; }
+
+.bkey {
+  margin: 1rem 0 0; padding: 0 var(--pad-x);
+  font-size: .78rem; line-height: 1.5; color: var(--muted);
+}
+.bkey b { color: var(--ink); font-weight: 700; }
+
+/* ── match detail ────────────────────────────────────────────
+   A bracket card is far too small to hold two teams, and it can't
+   grow: the slot arithmetic assumes every card is exactly two grid
+   tracks tall. It can't be anchored inside the bracket either —
+   .bwrap is a scroll container in both axes and .bracket places
+   every child explicitly, so anything in there is clipped or lands
+   on row 1 over the first card. So the match opens over the page.
+
+   z-index 100 is the only value in this sheet above the event
+   picker's 60, and nothing between them makes a stacking context.
+   ─────────────────────────────────────────────────────────── */
+.modal {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center;
+  padding: clamp(.6rem, 3vw, 2rem);
+  background: var(--scrim);
+}
+.mdpanel {
+  width: min(980px, 100%); max-height: 100%; overflow-y: auto;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 16px;
+  padding: .9rem 1rem 1.1rem;
+  /* The picker's shadow — the only large one in the app, so anything
+     else would read as foreign. */
+  box-shadow: 0 18px 46px -20px rgba(0,0,0,.5);
+}
+/* A bye has one player; the panel narrows to them rather than leaving
+   half an empty card alongside. */
+.mdpanel.solo { width: min(560px, 100%); }
+.mdpanel:focus-visible { border-radius: 16px; }
+.mdclose:focus-visible { border-radius: 8px; }
+
+.mdhead {
+  display: flex; align-items: flex-start; gap: .6rem;
+  border-bottom: 1px solid var(--hair);
+  padding-bottom: .6rem; margin-bottom: .85rem;
+}
+.mdid { min-width: 0; display: flex; flex-direction: column; gap: .22rem; }
+.mdid h2 {
+  margin: 0; font-size: 1.02rem; font-weight: 800;
+  letter-spacing: -.02em; line-height: 1.2;
+}
+/* .meta is nowrap by default, and this line is four facts long. */
+.mdid .meta { white-space: normal; flex-wrap: wrap; }
+.mdclose {
+  margin-left: auto; flex: none; background: none; border: 0;
+  padding: .15rem; color: var(--muted);
+  display: grid; place-items: center; line-height: 0; border-radius: 8px;
+}
+.mdclose:hover { color: var(--ink); }
+
+.mdplayers { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1.2rem; }
+.mdplayers.one { grid-template-columns: minmax(0,1fr); }
+
+.mdp { min-width: 0; display: flex; flex-direction: column; gap: .5rem; }
+/* Far lighter than .side.out's .55 — the loser's team is half of what this
+   panel is for, so it dims only enough to say who lost. */
+.mdp.out { opacity: .84; }
+.mdwho { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.mdwho .nm {
+  font-weight: 800; font-size: var(--nm);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mdwho .cc {
+  font-family: var(--mono); font-size: var(--sub);
+  color: var(--muted); letter-spacing: .06em; flex: none;
+}
+.mdwho .rec { margin-left: auto; flex: none; }
+.mdwho .v { flex: none; }
+/* .empty's 2.2rem is a page-level pad, far too much for half a panel. */
+.mdp .empty { padding: 1.1rem .6rem; font-size: .8rem; margin: 0; }
+
+/* Two teams stop being comparable side by side well before the standings
+   grid does — 184px cards want ~400px of column. */
+@media (max-width: 860px) { .mdplayers { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 420px) {
+  .modal { padding: .4rem; }
+  .mdpanel { padding: .7rem .75rem .9rem; border-radius: 14px; }
+  .mdid h2 { font-size: .94rem; }
+  .mdwho { --rk: 2.3rem; }
+}
+
+/* Both animate *from* a state and never set one, so the blanket
+   reduced-motion `animation: none` leaves a correct static result —
+   the same trick .livedot.beat uses. */
+@media (prefers-reduced-motion: no-preference) {
+  .modal { animation: fade .14s ease-out; }
+  .mdpanel { animation: rise .18s cubic-bezier(.2,.85,.3,1); }
+}
+@keyframes fade { from { opacity: 0 } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px) } }
+
+/* ── loading skeletons ───────────────────────────────────── */
+/* Placeholders reuse .row / .usagerow / .mon / .rk, so the skeleton is
+   the same grid at the same height as the real content and nothing
+   shifts when the data lands. */
+.skwrap { display: flex; flex-direction: column; gap: var(--row-gap); }
+.skrow { pointer-events: none; }
+.skrow:hover { border-color: var(--hair); box-shadow: none; }
+
+.sk {
+  position: relative; overflow: hidden;
+  background: var(--card-2); border-radius: 999px;
+}
+/* One highlight sweeping left to right. The stagger keeps the column of
+   rows from strobing in unison. */
+.sk::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, var(--hair), transparent);
+  transform: translateX(-100%);
+  animation: sweep 1.35s ease-in-out infinite;
+}
+.skrow:nth-child(2n) .sk::after   { animation-delay: .12s; }
+.skrow:nth-child(3n) .sk::after   { animation-delay: .24s; }
+@keyframes sweep { to { transform: translateX(100%); } }
+
+.skline { display: block; height: calc(var(--nm) * .72); }
+.skline.sm { height: calc(var(--sub) * .72); margin-top: .2rem; }
+.skline.r { margin-left: auto; }
+/* Standings stat placeholders sit under centred columns. */
+.skline.c { margin: 0 auto; }
+.skstar { display: block; width: 15px; height: 15px; border-radius: 4px; }
+.skrow .bar { background: var(--card-2); }
+/* The bracket placeholder is whole cards, not lines inside one — it keeps
+   the card's radius rather than the pill radius .sk would otherwise give it. */
+.bnode.sk { border-radius: 12px; border-color: var(--hair); }
+
+/* The blanket reduced-motion rule below uses `*`, which never matches a
+   pseudo-element — so the sweep has to be stopped by name. Left static it
+   would read as a stripe, so drop it and let the flat fill do the work. */
+@media (prefers-reduced-motion: reduce) {
+  .sk::after { display: none; }
+}
+
+/* ── event picker (the season timeline) ──────────────────── */
+.picker { position: relative; }
+.picker-trigger {
+  display: flex; align-items: center; gap: .5rem;
+  background: transparent; border: 0; padding: 0; text-align: left; color: inherit;
+}
+.picker-trigger .nm {
+  font-size: clamp(1.15rem,2.6vw,1.5rem); font-weight: 800;
+  letter-spacing: -.03em; line-height: 1.05;
+}
+.picker-trigger svg { flex: none; opacity: .6; }
+.picker-trigger:hover svg { opacity: 1; }
+
+.picker-panel {
+  position: absolute; z-index: 60; top: calc(100% + .5rem); left: 0;
+  width: min(470px,92vw); max-height: 62vh; overflow-y: auto;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 14px;
+  padding: .7rem .8rem .8rem;
+  box-shadow: 0 18px 46px -20px rgba(0,0,0,.5);
+}
+.tl { position: relative; padding-left: 1.15rem; }
+.tl::before { content: ""; position: absolute; left: .28rem; top: .3rem; bottom: .3rem; width: 2px; background: var(--hair); }
+.tlhead, .tlmonth {
+  font-family: var(--mono); font-size: .58rem; font-weight: 700;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--muted);
+  margin: .7rem 0 .25rem -1.15rem;
+}
+.tlhead { color: var(--live); margin-top: 0; }
+.tlrow {
+  position: relative; display: flex; align-items: center; gap: .4rem;
+  width: 100%; text-align: left; background: transparent;
+  border: 1px solid transparent; border-radius: 999px; padding: .28rem .55rem;
+}
+.tlrow:hover:not(:disabled) { background: var(--card-2); border-color: var(--hair); }
+.tlrow:disabled { cursor: default; opacity: .6; }
+.tlrow.on { background: var(--lead); border-color: var(--line); color: var(--on-lead); }
+.tlrow .node {
+  position: absolute; left: -1.02rem; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--hair); border: 2px solid var(--card);
+}
+.tlrow.future .node { background: var(--star); }
+.tlrow.on .node { background: var(--ink); }
+.tlrow .label { font-size: .84rem; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tlrow.future .label { font-weight: 500; color: var(--muted); }
+.tlrow .when { font-family: var(--mono); font-size: .62rem; color: var(--muted); white-space: nowrap; }
+.tlrow.on .when { color: var(--lead-dim); }
+.tier {
+  font-family: var(--mono); font-size: .52rem; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
+  padding: .1rem .32rem; border-radius: 4px; white-space: nowrap;
+  border: 1px solid var(--hair); color: var(--muted);
+}
+.tier.t-worlds, .tier.t-intl { border-color: var(--ink); color: var(--ink); }
+.tlrow.on .tier { border-color: var(--lead-dim); color: var(--lead-dim); }
+.cc-chip { font-family: var(--mono); font-size: .56rem; color: var(--muted); }
+
+.nowline {
+  display: flex; align-items: center; gap: .5rem; margin: .8rem 0 .5rem -1.15rem;
+  font-family: var(--mono); font-size: .56rem; font-weight: 700;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--live);
+}
+.nowline::after { content: ""; flex: 1; height: 1px; background: var(--live); opacity: .4; }
+
+footer.foot {
+  margin-top: 1.8rem; padding-top: 1rem; border-top: 1px solid var(--hair);
+  font-size: .76rem; color: var(--muted); line-height: 1.6; max-width: 78ch;
+}
+footer.foot a { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+@media (max-width: 860px) {
+  .key, .row {
+    grid-template-columns:
+      var(--rk) calc(var(--nm) * 1.6) minmax(90px,1fr)
+      repeat(2, var(--stat));
+  }
+  .key .h-team, .key .h-res1, .key .h-res2,
+  .row .team, .row .res { display: none; }
+}
