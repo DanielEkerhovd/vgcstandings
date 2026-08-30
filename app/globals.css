@@ -31,6 +31,32 @@
      overrides of --win/--loss carry through without a second definition. */
   --buff:    var(--win);
   --nerf:    var(--loss);
+  /* The elimination line. Being out of contention isn't a lost game, but it's
+     the same bad news to the eye, so it takes the same red — aliased for the
+     same reason the nature colours are, and because var() resolves at use the
+     dark override of --loss carries through here too. */
+  --out:     var(--loss);
+  /* The same two results as a wash, for a surface that carries one rather
+     than badges it — the match detail's identity line. Mixed from the
+     colours themselves so each result's hue is still decided in exactly one
+     place, and defined once for the reason --buff and --nerf are: var()
+     resolves at use, so the dark overrides of --win and --loss carry through
+     without a second definition. 14% is where the name on top keeps its
+     contrast on either paper; the border alongside is the colour at full
+     strength, so the pill still has an edge to it. */
+  --win-wash:  color-mix(in srgb, var(--win) 14%, transparent);
+  --loss-wash: color-mix(in srgb, var(--loss) 14%, transparent);
+  /* A match still being played, in the slot a result will land in. Its own
+     colour, and deliberately not --live: the green belongs to the page's
+     "this feed is moving" vocabulary, and one shade off --win is far too
+     loud for a chip that is only saying it has nothing to report yet. A warm
+     brown is the neutral the rest of this palette is built from — it sits
+     with --hair rather than competing with the result colours beside it.
+     The two mixes are the ends of its breath, kept close together so the
+     movement is noticed rather than watched. */
+  --wait:      #8A7350;
+  --wait-wash: color-mix(in srgb, var(--wait) 8%, transparent);
+  --wait-lit:  color-mix(in srgb, var(--wait) 24%, transparent);
   --star:    #E8A317;
   /* Search hits ride the same amber the rest of the UI highlights with —
      deeper in light, brighter in dark, so the ring holds on either paper. */
@@ -78,8 +104,14 @@
      out of step with the gap the way a hardcoded pixel value does. */
   --mon-gap:  calc(var(--icon) * .085);
   --team-col: calc(var(--icon) * 6 + var(--mon-gap) * 5);
+  /* The favourite column and the row's left padding are tokens because the
+     star is no longer inside the row — it's positioned over this column from
+     outside, and the offset it needs is built from exactly these two plus the
+     rank disc. Written once, they can't drift apart. */
+  --star-col: calc(var(--nm) * 1.7);
+  --row-pad-l: .24rem;
   --grid-cols:
-    var(--rk) calc(var(--nm) * 1.7) minmax(110px, 1fr)
+    var(--rk) var(--star-col) minmax(110px, 1fr)
     var(--team-col)
     repeat(4, var(--stat));        /* record · pts · opp · opp·opp */
   --col-gap: .7rem;
@@ -94,6 +126,9 @@
     --ink: #F2F0E6; --line: #0D0C09; --hair: #3A352B; --muted: #999285;
     --live: #48C48C; --win: #4FC98A; --loss: #F0776C; --star: #F0BE4A;
     --hit: #F0BE4A; --lead-edge: #F0C43C; --scrim: rgba(0,0,0,.66);
+    /* Lifted off --hair rather than darkened: on dark paper the brown has to
+       be the lighter thing to be an edge at all. */
+    --wait: #93805F;
     color-scheme: dark;
   }
 }
@@ -102,6 +137,7 @@
   --ink: #F2F0E6; --line: #0D0C09; --hair: #3A352B; --muted: #999285;
   --live: #48C48C; --win: #4FC98A; --loss: #F0776C; --star: #F0BE4A;
   --hit: #F0BE4A; --lead-edge: #F0C43C; --scrim: rgba(0,0,0,.66);
+  --wait: #93805F;
   color-scheme: dark;
 }
 /* Compact should read as a different view, not a nudge — but it still has
@@ -186,6 +222,44 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .densbtn .ch, .densbtn .dens { transition: none; }
 }
+
+/* Theme switch: a sun in light, a crescent in dark — the state, like the
+   chevrons above, not the action.
+
+   Which glyph shows is decided here rather than in React, off the same three
+   selectors that pick the palette itself. That's the whole point: the button
+   is server-rendered, and a dark-mode reader whose icon is chosen by a mounted
+   effect gets a sun for one frame first. Both glyphs are in the HTML and CSS
+   crossfades between them, so the switch is never briefly wrong. */
+.themebtn { padding: .28rem .45rem; }
+.themebtn .th {
+  display: grid; place-items: center; width: 17px; height: 17px;
+  flex: none; transition: transform .12s ease;
+}
+/* Stacked in one grid cell so they turn through each other in place. */
+.themebtn .th > svg {
+  grid-area: 1 / 1;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+  transition: opacity .18s ease, transform .32s cubic-bezier(.2, .85, .3, 1);
+}
+.themebtn .moon { opacity: 0; transform: rotate(60deg) scale(.5); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .themebtn .sun {
+    opacity: 0; transform: rotate(-60deg) scale(.5);
+  }
+  :root:not([data-theme="light"]) .themebtn .moon { opacity: 1; transform: none; }
+}
+/* After the media block on purpose — an explicit choice outranks the OS. */
+:root[data-theme="dark"] .themebtn .sun {
+  opacity: 0; transform: rotate(-60deg) scale(.5);
+}
+:root[data-theme="dark"] .themebtn .moon { opacity: 1; transform: none; }
+.themebtn:active .th { transform: scale(.9); }
+
+@media (prefers-reduced-motion: reduce) {
+  .themebtn .th, .themebtn .th > svg { transition: none; }
+}
 .badge {
   background: var(--ink); color: var(--paper); border-radius: 5px;
   font-family: var(--mono); font-size: .56rem; font-weight: 700;
@@ -203,6 +277,40 @@ button { cursor: pointer; }
   .livedot.beat { animation: pulse 2.4s ease-in-out infinite; }
 }
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+
+/* ── a match still being played ──────────────────────────────
+   Beside a name — in the masthead, in the match detail's meta line — the
+   state is one word away from being written out, so a 7px dot is the whole
+   mark it needs. In a *result* slot it isn't: the bracket card and the
+   rounds list both put this where a W would go, and a dot floating in an
+   empty box read as a smaller, fainter thing than the chips around it —
+   the one match anybody is actually watching was the quietest mark on the
+   card. So the chip itself carries it, at the same size a finished game
+   gets, breathing rather than blinking a dot on and off.
+
+   In --wait, not the live green: sat between a W and an L it was reading as
+   a third result, and the one thing this chip must not do is look like an
+   outcome. Brown says nothing yet. Quiet at both ends of the breath and
+   slower than the masthead's pulse — a whole column of these can be moving
+   at once, and none of them is asking to be looked at.
+   ─────────────────────────────────────────────────────────── */
+.side .v.live, .mdwho .v.live, .rd .v.live {
+  background: var(--wait-wash); border-color: var(--wait);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .side .v.live, .mdwho .v.live, .rd .v.live {
+    animation: breathe 3.4s ease-in-out infinite;
+  }
+}
+/* Held at the lit end, not the wash: with the animation gone the fill is the
+   only thing left saying anything, so it takes the louder of the two frames. */
+@media (prefers-reduced-motion: reduce) {
+  .side .v.live, .mdwho .v.live, .rd .v.live { background: var(--wait-lit); }
+}
+@keyframes breathe {
+  0%,100% { background: var(--wait-wash) }
+  50%     { background: var(--wait-lit) }
+}
 
 /* The division switch. The fill behind the chosen one is a single element
    that slides between the three rather than a background appearing on one
@@ -321,17 +429,42 @@ button { cursor: pointer; }
 .key {
   display: grid; align-items: center; gap: var(--col-gap);
   grid-template-columns: var(--grid-cols);
-  padding: 0 var(--pad-x) .28rem .24rem;
+  padding: 0 var(--pad-x) .28rem var(--row-pad-l);
   font-family: var(--mono); font-size: .56rem; font-weight: 600;
   letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
 }
 .rows { display: flex; flex-direction: column; gap: var(--row-gap); }
+/* The whole row is one button, and a button can't hold another one — nesting
+   them is invalid HTML and the hydration warning that says so is real. So the
+   star sits outside the button and is laid over its own column instead: it
+   keeps the click-anywhere row, keeps the sprites' own hover titles reachable
+   (an overlay across the whole row would swallow them), and the two elements
+   are siblings rather than one inside the other. */
+.rowbox { position: relative; }
+.rowbox > .star {
+  position: absolute;
+  /* Column 2 starts after the border, the row's left padding, the disc and
+     one gap — the same run .row lays out from. Centred by its own height
+     rather than stretched to the row's, so the focus ring stays the size of
+     the star instead of becoming a full-height bar. */
+  left: calc(1px + var(--row-pad-l) + var(--rk) + var(--col-gap));
+  width: var(--star-col);
+  top: 50%; transform: translateY(-50%);
+}
 .row {
   display: grid; align-items: center; gap: var(--col-gap);
   grid-template-columns: var(--grid-cols);
   width: 100%; text-align: left; min-height: var(--row-h);
-  background: var(--card); border: 1px solid var(--hair); border-radius: 999px;
-  padding: .2rem var(--pad-x) .2rem .24rem;
+  /* Half the row height, not the usual 999px, and only because this radius
+     animates. A radius past half the box is clamped to half for drawing but
+     still interpolates from the number written here, so 999px → 22px spends
+     96% of its time above the clamp — the corner sits still and then snaps
+     in the last few milliseconds. Starting at the clamp point is what makes
+     the whole transition visible. The row is exactly --row-h tall in every
+     density and at every width, so this draws the same pill 999px did. */
+  background: var(--card); border: 1px solid var(--hair);
+  border-radius: calc(var(--row-h) / 2);
+  padding: .2rem var(--pad-x) .2rem var(--row-pad-l);
   /* The colour pair is slower than the border because it only ever moves
      once — the moment the event finishes and the leader fills gold. The
      radius is on the panel's clock, not the border's: the pill unrolling
@@ -360,8 +493,10 @@ button { cursor: pointer; }
 .row.lead.crowned .nm, .row.lead.crowned .pts, .row.lead.crowned .rec,
 .row.lead.crowned .rec .w, .row.lead.crowned .rec .l { color: var(--on-lead); }
 .row.lead.crowned .cc, .row.lead.crowned .res, .row.lead.crowned .sub { color: var(--lead-dim); }
-.row.lead.crowned .star { color: #7A6620; }
-.row.lead.crowned .star.on { color: var(--on-lead); }
+/* The star is a sibling of the row now, so the crowned state is carried on
+   the box around both — it can't be inherited through .row any more. */
+.rowbox.crowned .star { color: #7A6620; }
+.rowbox.crowned .star.on { color: var(--on-lead); }
 
 .rk {
   width: var(--rk); height: var(--rk); border-radius: 50%; display: grid; place-items: center;
@@ -439,6 +574,32 @@ button { cursor: pointer; }
 .cutline::before, .cutline::after { content: ""; height: 2px; background: var(--live); opacity: .4; border-radius: 2px; }
 .cutline::before { width: 1.4rem; }
 .cutline::after { flex: 1; }
+/* Same divider, other end of the table: everyone under this one is
+   mathematically out. Only the colour changes — it reads as the counterpart
+   to the Top N line because it is drawn as one. */
+.cutline.out { color: var(--out); }
+.cutline.out::before, .cutline.out::after { background: var(--out); }
+/* The third one says nothing about the standings — under it are favourites
+   this event has no row for. Neutral on purpose: the other two report a
+   result, and nothing has happened to these players here to report. */
+.cutline.away { color: var(--muted); }
+/* --muted at full strength, not --line at .4: --line is near-black in both
+   themes, so it drew a rule you had to look for — and in dark, one darker
+   than the paper behind it. Grey needs the whole opacity to land where a
+   saturated green lands at .4. */
+.cutline.away::before, .cutline.away::after { background: var(--muted); opacity: 1; }
+
+/* An absent favourite: the name and its star, and deliberately nothing else.
+   Drawn as the same pill so the column of names stays one column, but hollow
+   and dashed — there's no card here, only a person you're following. It isn't
+   a button either, so it must not take the row's hover lift. */
+.row.away {
+  background: none; border-style: dashed; border-color: var(--hair);
+  color: var(--muted); cursor: default;
+}
+.row.away:hover { border-color: var(--hair); box-shadow: none; }
+.row.away .nm { font-weight: 600; color: var(--muted); }
+.row.away .rk { background: none; border: 1px dashed var(--hair); }
 
 /* ── grow / shrink ────────────────────────────────────────────
    How every panel that unrolls out of a row opens and closes.
@@ -492,18 +653,23 @@ button { cursor: pointer; }
   letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
 }
 .rounds { display: flex; flex-direction: column; gap: .2rem; }
-.rd { display: grid; grid-template-columns: 1.7rem 1.6rem 1fr auto; gap: .5rem; align-items: center; font-size: .8rem; }
-.rd .r { font-family: var(--mono); font-size: .64rem; color: var(--muted); }
+/* The first column holds "R11" for Swiss and "Finals" or "Top 16" past the
+   cut, so it's sized for the longest of those rather than the number. One
+   fixed width for the lot keeps every result chip on the same vertical. */
+.rd { display: grid; grid-template-columns: 2.9rem 1.6rem 1fr auto; gap: .5rem; align-items: center; font-size: .8rem; }
+.rd .r { font-family: var(--mono); font-size: .64rem; color: var(--muted); white-space: nowrap; }
 .rd .v {
   font-family: var(--mono); font-size: .66rem; font-weight: 700; text-align: center;
   border-radius: 5px; padding: .06rem 0; border: 1px solid var(--line); color: #fff;
+  /* See .side .v: the live chip carries no letter, so its height is stated
+     here rather than left to whatever happens to be inside it. */
+  line-height: 1.5; min-height: calc(1.5em + .12rem + 2px);
 }
 .rd .v.W { background: var(--win); }
 .rd .v.L { background: var(--loss); }
 .rd .v.T { background: var(--star); color: var(--on-lead); }
-/* A cut table still out. Same size as W/L/T so nothing shifts when the
-   result lands, and the same dot as the masthead so "live" reads alike. */
-.rd .v.P { background: var(--card); border-color: var(--hair); display: grid; place-items: center; }
+/* A cut table still out — .v.live, styled with the bracket's, so one match
+   looks the same in the two places the page draws it. */
 .rd .o { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rd .o.link { background: none; border: 0; padding: 0; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
 .rd .tbl { font-family: var(--mono); font-size: .62rem; color: var(--muted); }
@@ -514,6 +680,14 @@ button { cursor: pointer; }
   padding: .5rem .6rem; display: flex; gap: .55rem; align-items: flex-start;
   position: relative;
 }
+/* The card's only in-flow child, since .tousage is absolute. As a plain flex
+   item it took flex: 0 1 auto and shrink-wrapped to its widest line, so every
+   row inside it stopped short of the card's right edge — .mons columns are 1fr
+   and a card is usually wider than the 184px minimum, which left the move pills
+   ending on a ragged edge with dead space beside them. Grow it to fill, and
+   min-width: 0 so the nowrap rows within can still ellipsise instead of pushing
+   it back out. */
+.moncard .body { flex: 1; min-width: 0; }
 /* The jump to this species' usage entry. Absolute rather than a third flex
    child: the card's first line is the 48px sprite and nothing else, so the
    top right is dead space and the link costs the text no width. Muted until
@@ -530,10 +704,19 @@ button { cursor: pointer; }
 .moncard .art { width: 48px; height: 48px; flex: none; display: grid; place-items: center; }
 .moncard .art img { width: 48px; height: 48px; object-fit: contain; }
 .moncard .info { min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
-.moncard .n { font-size: .8rem; font-weight: 800; display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+/* One line, always. Pokédata writes forms in brackets — "Floette [Eternal
+   Flower]" — which on a 184px card is already the whole width, and the badge
+   after it used to wrap. That dropped this card's type pills, item, ability and
+   four moves a line below every neighbour's. So the species gives way and the
+   badge does not: MEGA is a fact about the form and the only place the card
+   states it, while the bracketed part repeats what the sprite above already
+   shows. The same call .d and .mvname make below. */
+.moncard .n { font-size: .8rem; font-weight: 800; display: flex; align-items: center; gap: .3rem; }
+.moncard .n .sp { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mega {
   font-family: var(--mono); font-size: .52rem; font-weight: 700; letter-spacing: .1em;
   background: var(--ink); color: var(--paper); border-radius: 4px; padding: .06rem .28rem;
+  flex: none; white-space: nowrap;
 }
 .typepills { display: flex; gap: .22rem; margin: .1rem 0; }
 .typepill {
@@ -563,7 +746,55 @@ button { cursor: pointer; }
   width: 14px; height: 14px; border-radius: 4px; flex: none;
   background: var(--card-2); border: 1px solid var(--hair);
 }
-.moncard .mv { font-family: var(--mono); font-size: .62rem; color: var(--muted); line-height: 1.4; margin-top: .12rem; }
+/* ── the movepool ─────────────────────────────────────────────
+   Four stacked pills rather than four names run together on a line, each
+   opening with its own typing. The fill and the hairline are the type
+   colour at a wash, set inline from typeTint() — the same place every other
+   type colour on this page comes from, and washed rather than solid because
+   these are surfaces text sits on, not badges. Both are alpha over whatever
+   card is behind them, so neither needs a dark override.
+
+   Same 999px radius as everything else here. This is a menu, not a list. */
+.moncard .mv {
+  display: flex; flex-direction: column; gap: .18rem;
+  margin-top: .22rem; min-width: 0;
+}
+.moncard .mvrow {
+  display: flex; align-items: center; gap: .32rem; min-width: 0;
+  border: 1px solid transparent; border-radius: 999px;
+  padding: .14rem .5rem .14rem .11rem;
+  /* .58rem of mono was 9px — the smallest thing on the card, under both the
+     ability line and the item it sits below, and four rows of jargon is the
+     last place to be saving three pixels. At .7rem it lands between the two,
+     which is the order these actually want to be read in. The card doesn't
+     widen to pay for it: .mons' 184px minimum is what fits three cards to a
+     column in the match detail, and the names already ellipsise with the full
+     one in the popover. */
+  font-family: var(--mono); font-size: .7rem; color: var(--ink);
+  line-height: 1.35;
+  /* The well the wash sits on, and the reason it can be a wash at all.
+     Normal and Dark at 16% over the dark card are within a shade of it, and
+     four pills you can't see the edges of are just the old line of names
+     again — this gives every row the same slot whatever its type, and the
+     colour lands on top of it. Recessed on both papers (--card-2 is below
+     --card in dark and beside it in light), which is how .noart already
+     draws an empty inventory square. */
+  background-color: var(--card-2);
+}
+/* The type, solid, with a white glyph — the treatment .typepill already
+   uses, so the two coloured marks on a card read as one idea. Empty when
+   the move is one no dataset carries, which keeps the names aligned. */
+.moncard .mvrow .ty {
+  width: 16px; height: 16px; flex: none;
+  border-radius: 50%; display: grid; place-items: center;
+  color: #fff; line-height: 0;
+}
+/* The name is a flex child of the pill — .termwrap is display:contents — so
+   it can be told to give way. A long move ellipsises rather than pushing the
+   pill past the card; the popover it already opens carries the full name. */
+.moncard .mvname {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* ── search hits ──────────────────────────────────────────────
    Only the sprites carry the mark. A name, IGN or country match is already
@@ -586,7 +817,10 @@ button { cursor: pointer; }
     var(--rk) var(--icon) minmax(140px,1.1fr) minmax(70px,1.9fr)
     repeat(2, var(--stat));   /* count · pct — same block as the standings */
   gap: var(--col-gap); padding: .2rem var(--pad-x) .2rem .24rem; min-height: var(--row-h);
-  background: var(--card); border: 1px solid var(--hair); border-radius: 999px;
+  /* Half the height rather than 999px, for the reason .row spells out: this
+     radius animates, and one past the clamp barely moves until the end. */
+  background: var(--card); border: 1px solid var(--hair);
+  border-radius: calc(var(--row-h) / 2);
   text-align: left; color: inherit;
   transition: border-color .12s, box-shadow .12s, border-radius .24s ease;
 }
@@ -698,8 +932,6 @@ button { cursor: pointer; }
    .moncard .d, both of which clip their overflow, so a 3px ring at 2px
    offset would be cropped down one side. */
 .term:focus-visible { outline-width: 2px; outline-offset: 1px; border-radius: 4px; }
-/* The " / " between two moves is punctuation, not a term. */
-.moncard .mv .sep { text-decoration: none; }
 
 .xpop {
   position: fixed; z-index: 120;
@@ -848,10 +1080,20 @@ button.bnode:focus-visible { border-radius: 12px; }
   font-family: var(--mono); font-size: .6rem; font-weight: 700; text-align: center;
   width: 1.4rem; border-radius: 5px; padding: .04rem 0;
   border: 1px solid var(--line); color: #fff;
+  /* .mdwho is a flex row and the live chip has nothing in it to hold the
+     track open, so without this it can be squeezed by a long name. */
+  flex: none;
+  /* A live chip has no letter in it, so its box would collapse to whatever
+     it contains and sit shorter than the W beside it. Stated rather than
+     inherited, and restated as a floor, so every chip is exactly one line
+     tall whether or not anything is written in it. */
+  line-height: 1.5; min-height: calc(1.5em + .08rem + 2px);
 }
 .side .v.W, .mdwho .v.W { background: var(--win); }
 .side .v.L, .mdwho .v.L { background: var(--loss); }
 .side .v.T, .mdwho .v.T { background: var(--star); color: var(--on-lead); }
+/* Only a seat in a round nobody has been paired into reaches this now — a
+   live match takes .v.live, up with the rest of the live vocabulary. */
 .side .v.P, .mdwho .v.P { background: var(--card); border-color: var(--hair); display: grid; place-items: center; }
 .side.bye .v { display: none; }
 
@@ -926,8 +1168,21 @@ button.bnode:focus-visible { border-radius: 12px; }
   padding: clamp(.6rem, 3vw, 2rem);
   background: var(--scrim);
 }
+/* The width is set by the card grid, not picked. Each team's column has to
+   hold three 184px cards — 3 × 184 + 2 × the .mons gap = 568px — so that six
+   Pokémon land in two rows rather than three. Two columns of that, plus the
+   1.2rem between them and this panel's own padding and border, is a shade over
+   1190. Since the movepool became four stacked pills a card is ~75px taller
+   than it was, and that third row is the whole reason this panel outgrew the
+   viewport.
+
+   The headroom above 1190 is deliberate. At the exact threshold a scrollbar
+   appearing would take ~15px off the content box, drop each team back to two
+   card columns, make the panel taller still and so keep the scrollbar — a
+   state that argues with itself. Below ~1150px of viewport it falls back to
+   two-across on its own, which is what it did before. */
 .mdpanel {
-  width: min(980px, 100%); max-height: 100%; overflow-y: auto;
+  width: min(1240px, 100%); max-height: 100%; overflow-y: auto;
   background: var(--card); border: 1.5px solid var(--line); border-radius: 16px;
   padding: .9rem 1rem 1.1rem;
   /* The picker's shadow — the only large one in the app, so anything
@@ -935,8 +1190,10 @@ button.bnode:focus-visible { border-radius: 12px; }
   box-shadow: 0 18px 46px -20px rgba(0,0,0,.5);
 }
 /* A bye has one player; the panel narrows to them rather than leaving
-   half an empty card alongside. */
-.mdpanel.solo { width: min(560px, 100%); }
+   half an empty card alongside. Still one team column wide enough for three
+   cards, by the same arithmetic and with the same headroom — a lone team
+   shouldn't be the one that lays out in three rows. */
+.mdpanel.solo { width: min(640px, 100%); }
 .mdpanel:focus-visible { border-radius: 16px; }
 .mdclose:focus-visible { border-radius: 8px; }
 
@@ -959,14 +1216,41 @@ button.bnode:focus-visible { border-radius: 12px; }
 }
 .mdclose:hover { color: var(--ink); }
 
-.mdplayers { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1.2rem; }
+.mdplayers { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1.6rem; }
 .mdplayers.one { grid-template-columns: minmax(0,1fr); }
 
-.mdp { min-width: 0; display: flex; flex-direction: column; gap: .5rem; }
-/* Far lighter than .side.out's .55 — the loser's team is half of what this
-   panel is for, so it dims only enough to say who lost. */
-.mdp.out { opacity: .84; }
-.mdwho { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.mdp { min-width: 0; display: flex; flex-direction: column; gap: .5rem; position: relative; }
+/* The rule between the two teams. Drawn by the second column rather than by
+   an element of its own: there is nothing in the gap to hang a class on, and
+   a third grid track would have to be kept in step with the collapse below.
+   Centred in the gap so it belongs to neither side, and a hairline because
+   every other divider in this sheet is one — the panel is already two clear
+   columns, and this only has to say where one ends. */
+.mdplayers .mdp + .mdp::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -.8rem;
+  width: 1px; background: var(--hair);
+}
+/* Far lighter than .side.out's .55, and hung on the result rather than on the
+   state: sideState calls both sides of a draw "out" — winner is the index of
+   a "W" and a draw has none — so dimming that class would grey out both teams
+   of a tied match and say one of them lost. */
+.mdp.rL { opacity: .84; }
+/* The identity line carries the result now, instead of a name with a small
+   letter after it. Two teams side by side needed something readable from
+   across the panel, and this is the pill the rest of the app already draws —
+   999px, 1.5px hairline — tinted by what happened. The chip stays for the
+   exact letter, which is what a draw needs: it takes no wash here, because
+   --star is reserved for a result and a tie already spends it on the chip. */
+.mdwho {
+  display: flex; align-items: center; gap: .5rem; min-width: 0;
+  background: var(--card-2); border: 1.5px solid var(--hair);
+  border-radius: 999px; padding: .32rem .6rem;
+}
+.mdp.rW .mdwho { background: var(--win-wash); border-color: var(--win); }
+.mdp.rL .mdwho { background: var(--loss-wash); border-color: var(--loss); }
+/* Still playing — the same green edge .bnode.live wears, so a live match
+   reads alike on the board and in here. */
+.mdp.live .mdwho { border-color: var(--live); }
 .mdwho .nm {
   font-weight: 800; font-size: var(--nm);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -975,19 +1259,34 @@ button.bnode:focus-visible { border-radius: 12px; }
   font-family: var(--mono); font-size: var(--sub);
   color: var(--muted); letter-spacing: .06em; flex: none;
 }
+/* What the disc used to say. The number is worth keeping — it's where this
+   player stands in the division — but at the head of a name it's a label, not
+   a medal, and a 3rem circle of it was reading as the loudest thing in the
+   panel. */
+.mdwho .pl {
+  font-family: var(--mono); font-size: var(--sub); font-weight: 700;
+  color: var(--muted); font-variant-numeric: tabular-nums; flex: none;
+}
 .mdwho .rec { margin-left: auto; flex: none; }
-.mdwho .v { flex: none; }
+/* Bigger than the same chip on a bracket card: there it's one of five things
+   in a 1.5rem-tall row, here it's the panel saying who won. */
+.mdwho .v { flex: none; font-size: .72rem; width: 1.75rem; padding: .1rem 0; }
 /* .empty's 2.2rem is a page-level pad, far too much for half a panel. */
 .mdp .empty { padding: 1.1rem .6rem; font-size: .8rem; margin: 0; }
 
 /* Two teams stop being comparable side by side well before the standings
    grid does — 184px cards want ~400px of column. */
-@media (max-width: 860px) { .mdplayers { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 860px) {
+  .mdplayers { grid-template-columns: minmax(0,1fr); }
+  /* Stacked, so the rule between them turns with them. */
+  .mdplayers .mdp + .mdp::before {
+    top: -.8rem; bottom: auto; left: 0; right: 0; width: auto; height: 1px;
+  }
+}
 @media (max-width: 420px) {
   .modal { padding: .4rem; }
   .mdpanel { padding: .7rem .75rem .9rem; border-radius: 14px; }
   .mdid h2 { font-size: .94rem; }
-  .mdwho { --rk: 2.3rem; }
 }
 
 /* Both animate *from* a state and never set one, so the blanket
@@ -1113,11 +1412,15 @@ footer.foot a { color: var(--ink); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (max-width: 860px) {
+  /* Narrowed here rather than in the template below, so the star laid over
+     column 2 follows the column it sits in. */
+  :root { --star-col: calc(var(--nm) * 1.6); }
   .key, .row {
     grid-template-columns:
-      var(--rk) calc(var(--nm) * 1.6) minmax(90px,1fr)
+      var(--rk) var(--star-col) minmax(90px,1fr)
       repeat(2, var(--stat));
   }
   .key .h-team, .key .h-res1, .key .h-res2,
   .row .team, .row .res { display: none; }
 }
+

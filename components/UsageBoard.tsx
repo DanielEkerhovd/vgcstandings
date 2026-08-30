@@ -29,13 +29,15 @@ import {
   asDivision,
   type Division,
   useAgo,
+  useCircuit,
+  useEventTid,
   useDensity,
   useLingering,
   useStandings,
 } from "./shared";
 
 export default function UsageBoard({
-  circuit,
+  circuit: served,
   initialTid,
   initialDivision,
   initialMon,
@@ -47,12 +49,9 @@ export default function UsageBoard({
   initialMon?: string;
 }) {
   const router = useRouter();
+  const circuit = useCircuit(served);
 
-  const [tid, setTid] = useState(
-    initialTid && circuit.some((e) => e.tid === initialTid)
-      ? initialTid
-      : (circuit.find((e) => e.tid)?.tid ?? "0000191"),
-  );
+  const [tid, setTid] = useEventTid(served, initialTid);
   const [division, setDivision] = useState<Division>(asDivision(initialDivision));
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string | null>(initialMon ?? null);
@@ -169,7 +168,7 @@ export default function UsageBoard({
         </EventControls>
       </header>
 
-      <SourceBanner source={source} />
+      <SourceBanner source={source} tid={tid} />
       {error && !players && (
         <div className="banner">
           <b>Couldn&apos;t load standings.</b> {error}

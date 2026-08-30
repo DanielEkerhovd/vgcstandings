@@ -254,11 +254,24 @@ async function main() {
   await mkdir("data", { recursive: true });
   await writeFile("data/effects.json", JSON.stringify(dex), "utf8");
 
+  // Just the typing, split out into its own file. The team cards colour every
+  // move by its type, which means they need this on first paint for all four
+  // slots at once — effects.json is 400KB and stays behind /api/effect, but
+  // 900 names and a type is ~20KB and rides in the bundle beside pokedex.json
+  // rather than costing four round trips per Pokémon.
+  const types = Object.fromEntries(
+    Object.entries(dex.moves)
+      .filter(([, m]) => m.type)
+      .map(([slug, m]) => [slug, m.type]),
+  );
+  await writeFile("data/move-types.json", JSON.stringify(types), "utf8");
+
   console.log(
     `\nmoves ${Object.keys(dex.moves).length} · ` +
       `items ${Object.keys(dex.items).length} · ` +
       `abilities ${Object.keys(dex.abilities).length} ` +
-      `written to data/effects.json`,
+      `written to data/effects.json\n` +
+      `${Object.keys(types).length} move types written to data/move-types.json`,
   );
 
   // Asked of the overlay, not of the merged result: an entry the overlay

@@ -14,7 +14,58 @@ npm run build:dex    # regenerates data/pokedex.json from PokéAPI
 npm run build:effects     # regenerates data/effects.json (hover explanations)
 npm run fetch:champions   # downloads the Champions menu icons
 npm run fetch:items       # downloads the held-item bag sprites
+npm run build:fixtures    # regenerates the synthetic test tournaments
 ```
+
+## Test tournaments
+
+`data/fixtures/*.json` are three synthetic events (tids `9000001`–`9000003`)
+holding bracket states the live feed only passes through for a few minutes:
+mid-Swiss with no cut, a Top 8 with the semis unpaired, a Top 4 with one match
+still out. The page says on its face that they're fake.
+
+**The rows stay on disk. Testing a state is never a reason to add or delete a
+file.**
+
+## The developer switch
+
+`lib/devtools.ts` owns one localStorage key, `toggleTools`, and it gates every
+dev-only surface — the fixtures today, whatever comes next on the same flag.
+It is **off** unless the string is exactly `"true"`, and a browser that has
+never seen it gets `"false"` written on first read, so the thing you have to
+flip is sitting in the inspector instead of being a name you had to know.
+
+Turn the fixtures on with `toggleTools = true` in devtools and a reload.
+
+There is deliberately **no UI for this** — no button, no toolbar pill, nothing
+that shifts the layout. A control for invented data does not belong in the
+chrome of a page people read for real standings, and the flag is a developer's
+tool, not a feature. Don't add one.
+
+Two consequences worth knowing before you touch it:
+
+- The switch is client-only, so `listEvents()` never merges fixtures. The
+  browser does it in `useCircuit()`. Don't move that back to the server: the
+  server can't read localStorage and would have to guess.
+- `toolsOn()` can only be read *after* mount, or the server (which always says
+  no) and the first client render disagree. So nothing gated on it may change
+  layout on arrival — appending to the event picker is fine, moving the toolbar
+  is not.
+
+The standings route is told by the caller — `?tools=1` on the fetch — because
+it can't read localStorage either. `openingTid()` accepts a fixture tid whether
+or not the tools are on yet, so a reload while reading one doesn't bounce you
+back to a real event.
+
+Don't reintroduce a build-time constant here. That's exactly what made deleting
+the data the only way to turn the fixtures off.
+
+They're generated, not hand-written — `scripts/build-fixtures.mjs`,
+deterministic, in pokedata's exact shape so they go through `normalize()` and
+`buildBracket()` on the same path as the real feed. Change one by changing the
+generator and re-running it; don't edit the JSON. The players in them are
+invented and must stay that way — test data that could pass for a real result
+is worse than none.
 
 ## The look
 
@@ -48,11 +99,30 @@ mode. That bug has been fixed once already.
 
 ### Other standing rules
 
-- Type colour appears only on the type pills inside an expanded team. Rows and
-  the team icons stay neutral. This was a deliberate call, don't reintroduce it.
+- Type colour stays inside an expanded team — the species' type pills, and the
+  four move pills below them. Rows and the team icons stay neutral. That was a
+  deliberate call, don't reintroduce it.
+- The two carry it differently, on purpose. A species' typing is a badge: solid
+  fill, white text. A move is a row of text, so it takes the same colour as a
+  16% wash over a `--card-2` well with `--ink` on top, and the type rides in a
+  solid disc at the left where a white glyph can sit on it. The well is what
+  makes Normal and Dark legible as pills at all — at 16% they're within a shade
+  of the dark card. Both washes come from `typeTint()`; don't hand-pick either.
+- Move typings come from `data/move-types.json`, not from the effect popovers.
+  Those fetch one word on hover, and a card needs four colours before anyone
+  points at anything. `scripts/build-effects.mjs` writes both files.
 - Row density is one icon button in the toolbar. The chevrons animate purely in
   CSS off the button's own `aria-pressed`, and the state lives as
   `data-density` on `documentElement`. Don't move that into React state.
+- The theme switch is the sun/moon button under the player count, at the end of
+  the masthead's live column. No stored choice means **no `data-theme`
+  attribute at all** and the palette follows `prefers-color-scheme` — that's
+  the default and it stays the default; a click writes the attribute and
+  `pokedata-demo:theme`, which then outranks the OS. Which glyph shows is CSS,
+  off the same three selectors that pick the palette, because a glyph chosen by
+  a mounted effect shows a sun for one frame to every dark-mode reader. The
+  inline script in `layout.tsx` exists only to land a stored choice before the
+  first paint; nothing else belongs in it.
 - Respect `prefers-reduced-motion` for anything that animates.
 
 ## The data

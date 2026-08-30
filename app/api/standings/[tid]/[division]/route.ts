@@ -1,6 +1,20 @@
 import { NextRequest } from "next/server";
 import { UA, type RawPlayer } from "@/lib/pokedata";
+import { fixtureFor } from "@/lib/fixtures";
 import sample from "@/data/worlds-2026-masters-sample.json";
+
+/**
+ * Test tournaments, loaded only if one is actually asked for.
+ *
+ * Dynamic rather than top-level imports: together the rows are half a
+ * megabyte, and a production build with fixtures off should not be carrying
+ * them around in the route bundle at all.
+ */
+const FIXTURE_ROWS: Record<string, () => Promise<{ default: unknown }>> = {
+  "9000001": () => import("@/data/fixtures/9000001.json"),
+  "9000002": () => import("@/data/fixtures/9000002.json"),
+  "9000003": () => import("@/data/fixtures/9000003.json"),
+};
 
 const DIVISIONS = {
   juniors: "Juniors",
@@ -56,6 +70,36 @@ export async function GET(
 
   if (!/^\d{7}$/.test(tid) || !(division in DIVISIONS)) {
     return Response.json({ error: "bad tid or division" }, { status: 400 });
+  }
+
+  // A fixture never touches the network. One set of rows serves all three
+  // divisions — the generator builds a Masters-sized field and the division
+  // toggle isn't what these are testing.
+  //
+  // The switch itself is localStorage, which only the browser can read, so the
+  // caller says whether the tools are on and this trusts it. Nothing is
+  // exposed by trusting it: a fixture is only reachable by naming one of three
+  // reserved tids, and the page says on its face that it's invented.
+  const fixture = fixtureFor(tid, req.nextUrl.searchParams.get("tools") === "1");
+  if (fixture) {
+    const rows = (await FIXTURE_ROWS[tid]()).default;
+    return Response.json(rows, {
+      headers: {
+        // No caching: a fixture is for staring at while you edit the code
+        // that renders it, and a stale one would waste an afternoon.
+        "cache-control": "no-store",
+        "x-source": "fixture",
+        // The header line the scraper would have read off the standings page.
+        "x-players": String(fixture.players),
+        "x-round": String(fixture.round),
+        "x-rounds": String(fixture.rounds),
+        "x-playing": String(fixture.playing),
+        "x-tierate": fixture.tieRate,
+        // Written now, so the 24-hour idle backstop never reads a fixture as
+        // an event that finished and went quiet.
+        "x-upstream-modified": new Date().toUTCString(),
+      },
+    });
   }
 
   const tree =

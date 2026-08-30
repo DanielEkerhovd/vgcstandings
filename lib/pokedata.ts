@@ -82,6 +82,15 @@ export interface Player {
 
 const COUNTRY = /\s*\[([A-Za-z]{2,3})\]\s*$/;
 
+/** The name split `normalize()` does, for the places that hold a name with no
+ *  row behind it — a favourite starred at some other event, say. Exported so
+ *  those read `RIN NAKAMURA · JP` like every other row rather than printing
+ *  the raw `RIN NAKAMURA [JP]` the store keys on. */
+export function splitName(name: string): { display: string; country: string | null } {
+  const cc = name.match(COUNTRY)?.[1] ?? null;
+  return { display: name.replace(COUNTRY, ""), country: cc ? cc.toUpperCase() : null };
+}
+
 export function normalize(raw: RawPlayer[]): Player[] {
   return raw.map((p) => {
     const country = p.name.match(COUNTRY)?.[1] ?? null;
@@ -275,7 +284,12 @@ export interface EventSummary {
 
 const EVENT_RE = /location\.href='(\d{7})\/'[^>]*>([\s\S]*?)<\/button>/g;
 
-export const UA = "pokedata-demo/0.1 (learning project; swap in your contact)";
+/**
+ * What pokedata's logs see on every request this site makes. It carries a URL
+ * rather than nothing, so the one person running that server can look up who
+ * is polling them and get in touch before deciding to block it.
+ */
+export const UA = "vgcstandings/1.0 (+https://www.vgcstandings.com)";
 
 /** Fallback so the demo still runs when the index can't be reached. */
 export const FALLBACK_EVENTS: EventSummary[] = [
@@ -284,6 +298,9 @@ export const FALLBACK_EVENTS: EventSummary[] = [
   { tid: "0000189", name: "2026 Turin Pokémon VGC Cup", dates: "June 6-7, 2026" },
 ];
 
+// The fixtures are *not* merged here. This runs on the server, and whether
+// they're wanted is a localStorage answer only the browser has — `useCircuit`
+// appends them client-side instead.
 export async function listEvents(): Promise<EventSummary[]> {
   try {
     const res = await fetch("https://www.pokedata.ovh/standingsVGC/", {

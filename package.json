@@ -9,11 +9,13 @@
     "typecheck": "tsc --noEmit",
     "build:dex": "node scripts/build-pokedex.mjs",
     "build:effects": "node scripts/build-effects.mjs",
+    "build:fixtures": "node scripts/build-fixtures.mjs",
     "fetch:champions": "node scripts/fetch-champions.mjs",
     "fetch:items": "node scripts/fetch-items.mjs",
     "build:type-icons": "node scripts/build-type-icons.mjs"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "next": "^16.3.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import {
-  Fragment,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -16,28 +16,31 @@ import {
   type Player,
   type RawPlayer,
 } from "@/lib/pokedata";
-import type { CircuitEvent } from "@/lib/events";
+import { toCircuit, type CircuitEvent } from "@/lib/events";
+import { toolsOn } from "@/lib/devtools";
+import { FIXTURES, fixtureEvents, isFixtureTid } from "@/lib/fixtures";
 import EventPicker from "./EventPicker";
 import {
   CHAMPIONS_COUNT,
   ITEMS_COUNT,
   itemIcon,
   itemSlug,
+  moveType,
   resolveMon,
   type PokemonType,
 } from "@/lib/dex";
 import { classShort, isMove, useTermEffect, type EffectKind } from "@/lib/effects";
-import { TypeIcon, typeColor } from "@/lib/types";
+import { TypeIcon, typeColor, typeTint } from "@/lib/types";
 
 export const DIVISIONS = ["masters", "seniors", "juniors"] as const;
 export type Division = (typeof DIVISIONS)[number];
 
 /**
  * Where the rows on screen came from. Only `live` is a real tournament as it
- * stands right now — `sample` is the bundled snapshot standing in for it, and
- * the page says so rather than letting it pass for the real thing.
+ * stands right now — the other two are, in their different ways, a stand-in,
+ * and the page says so rather than letting either pass for the real thing.
  */
-export type Source = "live" | "sample" | null;
+export type Source = "live" | "sample" | "fixture" | null;
 
 export const asDivision = (v?: string | null): Division =>
   DIVISIONS.includes(v as Division) ? (v as Division) : "masters";
@@ -370,6 +373,41 @@ function usageHref(name: string) {
   return `/usage?${qs}`;
 }
 
+/**
+ * One move, as a pill that says what type it is before it says its name.
+ *
+ * The typing comes from the build's own table rather than from the effect
+ * popover, which only fetches on hover — all four slots need a colour on the
+ * first paint, and waiting for four round trips would mean the card changed
+ * colour under anyone who moved a pointer across it.
+ *
+ * A move no dataset knows about still gets the disc, empty and neutral. The
+ * alternative is a row that starts its name where the others start their
+ * icon, and one misaligned line costs more than an unexplained grey dot.
+ */
+function MoveRow({ move }: { move: string }) {
+  const type = moveType(move);
+  return (
+    <span
+      className="mvrow"
+      style={{
+        // A layer, not a fill: .mvrow already owns background-color, and this
+        // washes the type over it. Two identical stops is the shortest way to
+        // spend a gradient on a flat colour.
+        backgroundImage: `linear-gradient(${typeTint(type, 0.16)}, ${typeTint(type, 0.16)})`,
+        borderColor: typeTint(type, 0.34),
+      }}
+    >
+      <span className="ty" style={{ background: typeColor(type ?? undefined) }}>
+        {type && <TypeIcon type={type as PokemonType} size={10} />}
+      </span>
+      {/* Named, because a move with nothing to explain drops the button and
+          renders as a bare span — and the pill has to squeeze either one. */}
+      <Explain kind="move" term={move} className="mvname" />
+    </span>
+  );
+}
+
 /** One team slot: artwork, typing, held item, spread and moves. Shared by
  *  the standings' expanded row and the bracket's match detail. */
 export function MonCard({ mon, hit }: { mon: Mon; hit?: boolean }) {
@@ -408,7 +446,12 @@ export function MonCard({ mon, hit }: { mon: Mon; hit?: boolean }) {
         <MonArt name={mon.name} item={mon.item} variant="card" />
         <div className="info">
           <span className="n">
-            {mon.name}
+            {/* Its own element, not a bare text node: an anonymous flex item
+                can't be given text-overflow, and this one has to give way so
+                the badge beside it never wraps. */}
+            <span className="sp" title={mon.name}>
+              {mon.name}
+            </span>
             {megaLabel && (
               <span className="mega">
                 MEGA{megaLabel[1] ? ` ${megaLabel[1].toUpperCase()}` : ""}
@@ -439,14 +482,17 @@ export function MonCard({ mon, hit }: { mon: Mon; hit?: boolean }) {
           <span className="d">
             <Explain kind="ability" term={mon.ability} /> · {mon.nature}
           </span>
-          {/* The separators stay outside the terms so the underline sits under
-              the move and not the slash between two of them. */}
+          {/* One pill per move, stacked, each carrying its own typing on the
+              left. Four names run together on one line read as a single
+              string of jargon; four rows that each start with a colour are a
+              movepool you can take in without reading it — the Fire slot, the
+              two Ghost slots, the status move. The disc is a solid type fill
+              with a white glyph on it, the same treatment as the typing pills
+              above, and the row behind it is that colour at a wash so the
+              name still sits on --ink. */}
           <span className="mv">
             {mon.moves.map((mv, i) => (
-              <Fragment key={`${mv}-${i}`}>
-                {i > 0 && <span className="sep"> / </span>}
-                <Explain kind="move" term={mv} />
-              </Fragment>
+              <MoveRow key={`${mv}-${i}`} move={mv} />
             ))}
           </span>
         </div>
@@ -544,7 +590,12 @@ export function useStandings(
       // Never poll a tab nobody is looking at.
       if (document.visibilityState === "visible") {
         try {
-          const res = await fetch(`/api/standings/${tid}/${division}`);
+          // Read per request rather than held in state: the route needs to be
+          // told the tools are on to serve a fixture, and threading that
+          // through as a dependency would refetch a real event for nothing.
+          const res = await fetch(
+            `/api/standings/${tid}/${division}${toolsOn() ? "?tools=1" : ""}`,
+          );
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const raw: RawPlayer[] = await res.json();
           if (!alive || keyRef.current !== `${tid}/${division}`) return;
@@ -618,7 +669,8 @@ export function useStandings(
             ended,
             finishedAt,
           });
-          setSource(res.headers.get("x-source") === "live" ? "live" : "sample");
+          const src = res.headers.get("x-source");
+          setSource(src === "live" || src === "fixture" ? src : "sample");
           setFetchedAt(Date.now());
           setError(null);
         } catch (e) {
@@ -683,6 +735,147 @@ export function DensityToggle({ compact, onToggle }: { compact: boolean; onToggl
       </svg>
     </button>
   );
+}
+
+/** The one key the theme switch owns. Read by the inline script in `layout`. */
+const THEME_KEY = "pokedata-demo:theme";
+
+/**
+ * Light or dark, and how it was decided.
+ *
+ * Until someone touches the switch there is no `data-theme` attribute at all,
+ * so the palette comes from `prefers-color-scheme` and follows the OS the
+ * moment it changes — that path is the default and stays the default. A click
+ * writes the attribute and the key, and from then on the choice outranks the
+ * OS. `dark` is only what the *label* says; the glyph itself is picked in CSS
+ * off the same three cases that pick the palette, which is why it's right in
+ * the server's HTML and can't flash the wrong sky before this mounts.
+ */
+export function useTheme() {
+  const [choice, setChoice] = useState<"light" | "dark" | null>(null);
+  const [sysDark, setSysDark] = useState(false);
+
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch {}
+    if (saved === "light" || saved === "dark") setChoice(saved);
+
+    // Tracked even when a choice is stored: clearing the key in devtools should
+    // hand the page back to the OS without a reload.
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    setSysDark(mq.matches);
+    const sync = (e: MediaQueryListEvent) => setSysDark(e.matches);
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  const dark = choice ? choice === "dark" : sysDark;
+
+  return {
+    dark,
+    toggle: () => {
+      const next = dark ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem(THEME_KEY, next); } catch {}
+      setChoice(next);
+    },
+  };
+}
+
+/**
+ * The theme switch: a sun in light, a crescent in dark. Like the density
+ * chevrons it shows the state rather than the action, and for the same reason
+ * — an icon naming what you'd get instead of what you have leaves you unable
+ * to tell which one you're in. The words are in the tooltip and the label.
+ */
+export function ThemeToggle() {
+  const { dark, toggle } = useTheme();
+  return (
+    <button
+      className="pill themebtn"
+      onClick={toggle}
+      title={dark ? "Dark theme — click for light" : "Light theme — click for dark"}
+      aria-label={dark ? "Colour theme: dark" : "Colour theme: light"}
+    >
+      <span className="th" aria-hidden="true">
+        <svg className="sun" viewBox="0 0 20 20" width="17" height="17">
+          <circle cx="10" cy="10" r="3.5" />
+          <path d="M10 2.5v1.7M10 15.8v1.7M2.5 10h1.7M15.8 10h1.7M4.7 4.7l1.2 1.2M14.1 14.1l1.2 1.2M15.3 4.7l-1.2 1.2M5.9 14.1l-1.2 1.2" />
+        </svg>
+        <svg className="moon" viewBox="0 0 20 20" width="17" height="17">
+          <path d="M17.1 11.2A7.2 7.2 0 1 1 8.8 2.9 5.6 5.6 0 0 0 17.1 11.2z" />
+        </svg>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Is the developer switch on, in this browser?
+ *
+ * Read after mount rather than during render: the server has no localStorage
+ * and would always say no, so reading it any earlier is a hydration mismatch.
+ * The page therefore renders once without the tools and once with, which is
+ * why nothing here may affect layout — see `useCircuit`.
+ */
+export function useTools(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => setOn(toolsOn()), []);
+  return on;
+}
+
+/**
+ * The server's event list, plus the fixtures when the tools are on.
+ *
+ * They're appended, never prepended: the pages open on the first entry that
+ * has a tid, and landing on a synthetic tournament by default would be a trap.
+ * The picker sorts by date anyway, so position here costs nothing.
+ *
+ * Merged in the browser because that's the only place the switch can be read.
+ * The server builds the same list either way, so a reader who never sets the
+ * flag is served exactly the page they were served before this existed.
+ */
+export function useCircuit(circuit: CircuitEvent[]): CircuitEvent[] {
+  const tools = useTools();
+  return useMemo(
+    () => (tools ? [...circuit, ...toCircuit(fixtureEvents())] : circuit),
+    [circuit, tools],
+  );
+}
+
+/** The first entry that has a tid, or the URL's when the list contains it. */
+const openingTid = (circuit: CircuitEvent[], initial?: string): string =>
+  initial && circuit.some((e) => e.tid === initial)
+    ? initial
+    : (circuit.find((e) => e.tid)?.tid ?? "0000191");
+
+/**
+ * Which event is open, and the state that tracks it.
+ *
+ * The URL can name a fixture: the pages write `?tid=` as you browse, so
+ * reloading while reading one is ordinary. Whether that tid means anything,
+ * though, is a localStorage answer the server doesn't have — and opening on a
+ * fixture whose tools have since been switched off is exactly how the picker
+ * ends up reading "Choose an event" above rows from the bundled sample, with
+ * no badge and no dates, because nothing in the list matches the tid.
+ *
+ * So the first render always resolves to a real event, which the server and
+ * the client agree on, and a fixture named in the URL is adopted straight
+ * after mount — only if the tools turn out to be on. With them off the stale
+ * tid is simply dropped, and the effect that keeps the URL in step rewrites it
+ * to whatever really opened.
+ */
+export function useEventTid(circuit: CircuitEvent[], initial?: string) {
+  const [tid, setTid] = useState(() => openingTid(circuit, initial));
+  const settled = useRef(false);
+
+  useEffect(() => {
+    if (settled.current) return;
+    settled.current = true;
+    if (initial && isFixtureTid(initial) && toolsOn()) setTid(initial);
+  }, [initial]);
+
+  return [tid, setTid] as const;
 }
 
 /* ------------------------------------------------------------------ *
@@ -786,6 +979,30 @@ export function stageOf(round: number, rounds: number, cutSize: number | null) {
   const nth = round - rounds; // 1 = first bracket round
   if (nth < 1) return null;
   return { nth, name: cutSize ? (cutStages(cutSize)[nth - 1] ?? null) : null };
+}
+
+/**
+ * How a bracket exit reads on a standings row.
+ *
+ * The round number is right for Swiss — "dropped R5" is how people talk — and
+ * wrong here: R12 means nothing unless you already know Swiss ran 11 rounds.
+ * The bracket columns and the match modal name this round through `stageOf`,
+ * so the row says the same word they do.
+ */
+export function outStage(
+  round: number,
+  rounds: number | null,
+  cutSize: number | null,
+): string | null {
+  const at = rounds === null ? null : stageOf(round, rounds, cutSize);
+  const stages = cutSize ? cutStages(cutSize) : [];
+  // `cutSize` resolves a round late, so there is a window where the stage has
+  // no name yet. A number we can explain beats a stage we would be guessing —
+  // the same fallback ladder BracketBoard walks.
+  if (!at?.name) return `out R${round}`;
+  // Nothing for a finals loss: the rank disc beside it already reads 2, and
+  // "out in Finals" is that same fact said twice.
+  return at.nth === stages.length ? null : `out in ${at.name}`;
 }
 
 /**
@@ -907,7 +1124,9 @@ export function RankDisc({
   );
 }
 
-/** Star toggle. Sits inside clickable rows, so it stops propagation. */
+/** Star toggle. It's laid *over* a clickable row rather than inside one — a
+ *  button can't legally contain another — but it still stops propagation, so
+ *  it stays safe to drop into any container that carries its own click. */
 export function StarButton({
   name,
   on,
@@ -1146,20 +1365,29 @@ export function Masthead({
             </span>
           )}
         </span>
-        {/* Sits under the live state rather than beside the round, because it
-            says the same kind of thing those two do — how settled what you're
-            reading is — and not what stage the event is at.
+        {/* The second line of this column. The tables pill sits under the live
+            state rather than beside the round, because it says the same kind of
+            thing those two do — how settled what you're reading is — and not
+            what stage the event is at.
 
             Swiss only. The count comes off the same scraped header line that
             keeps saying "Round 13/11" into the bracket, so past the cut it's a
             number about a round nobody is looking at any more — and "3 tables
-            left" next to a Top 8 that has two matches in it reads as wrong. */}
-        {!stage && meta.playing !== null && meta.playing > 0 && !meta.ended && (
-          <span className="pill tables" title="Results still to come in this round">
-            <i className="livedot stale beat" />
-            {meta.playing} table{meta.playing === 1 ? "" : "s"} left
-          </span>
-        )}
+            left" next to a Top 8 that has two matches in it reads as wrong.
+
+            The theme switch rides at the end of the row: it's the one control
+            in this corner that has nothing to do with the event, so it goes
+            last, and it's the only thing here that's always present — the row
+            holds the right edge whether or not there are tables out. */}
+        <span className="live-row">
+          {!stage && meta.playing !== null && meta.playing > 0 && !meta.ended && (
+            <span className="pill tables" title="Results still to come in this round">
+              <i className="livedot stale beat" />
+              {meta.playing} table{meta.playing === 1 ? "" : "s"} left
+            </span>
+          )}
+          <ThemeToggle />
+        </span>
       </span>
     </div>
   );
@@ -1257,17 +1485,29 @@ export function EventControls({
 /**
  * What you're looking at, whenever it isn't the live feed. One component
  * rather than a check per page: three pages showed the same banner off the
- * same condition, and changing the wording shouldn't mean editing all of them.
+ * same condition, and a fourth state to distinguish would have meant editing
+ * all of them again.
  */
-export function SourceBanner({ source }: { source: Source }) {
-  if (source !== "sample") return null;
+export function SourceBanner({ source, tid }: { source: Source; tid?: string }) {
+  if (source === "sample") {
+    return (
+      <div className="banner">
+        <b>Showing the bundled snapshot.</b> The live fetch to pokedata.ovh
+        didn&apos;t get through — usually a firewall or the event not existing
+        yet. Run this on an unrestricted connection and the same code pulls the
+        real thing; the dot above turns green.
+      </div>
+    );
+  }
+  if (source !== "fixture") return null;
 
+  const note = FIXTURES.find((f) => f.tid === tid)?.note;
   return (
     <div className="banner">
-      <b>Showing the bundled snapshot.</b> The live fetch to pokedata.ovh
-      didn&apos;t get through — usually a firewall or the event not existing
-      yet. Run this on an unrestricted connection and the same code pulls the
-      real thing; the dot above turns green.
+      <b>This is a test fixture, not a tournament.</b> Invented players,
+      generated results — it exists so a state the real feed only passes
+      through for a few minutes can be looked at whenever.
+      {note && ` ${note}`}
     </div>
   );
 }

@@ -27,11 +27,14 @@ function Player({
 }) {
   const p = side.player;
   const swiss = side.swiss ? rec(side.swiss) : null;
+  const playing = state === "live" || !side.result;
 
   return (
-    <div className={`mdp ${state}`}>
+    // The result letter as well as the state: `sideState` calls both sides of
+    // a draw "out", so it can't be what colours a losing team.
+    <div className={`mdp ${state}${side.result ? ` r${side.result}` : ""}`}>
       <div className="mdwho">
-        <span className="rk">{side.placing ?? "–"}</span>
+        {side.placing != null && <span className="pl">#{side.placing}</span>}
         <span className="nm">{side.display}</span>
         {side.country && (
           <span className="cc" title={countryName(side.country) ?? undefined}>
@@ -44,12 +47,10 @@ function Player({
         >
           {rec(side.record)}
         </span>
-        <span className={`v ${state === "live" ? "P" : side.result ?? "P"}`}>
-          {state === "live" || !side.result ? (
-            <i className="livedot beat" />
-          ) : (
-            side.result
-          )}
+        {/* The board's chip, unchanged — see Side in BracketBoard. The panel's
+            meta line above still spells "still playing" out in words. */}
+        <span className={`v ${playing ? "live" : side.result}`}>
+          {playing ? null : side.result}
         </span>
       </div>
 

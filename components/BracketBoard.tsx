@@ -24,6 +24,8 @@ import {
   stageOf,
   type Division,
   useAgo,
+  useCircuit,
+  useEventTid,
   useDensity,
   useStandings,
 } from "./shared";
@@ -40,6 +42,7 @@ const rec = (r: { wins: number; losses: number; ties: number } | null) =>
  */
 function Side({ side, state }: { side: BracketSide; state: "win" | "out" | "live" }) {
   const swiss = rec(side.swiss);
+  const playing = state === "live" || !side.result;
   return (
     <span className={`side ${state}`}>
       <span
@@ -60,12 +63,11 @@ function Side({ side, state }: { side: BracketSide; state: "win" | "out" | "live
       >
         {rec(side.record) ?? ""}
       </span>
-      <span className={`v ${state === "live" ? "P" : side.result ?? "P"}`}>
-        {state === "live" || !side.result ? (
-          <i className="livedot beat" />
-        ) : (
-          side.result
-        )}
+      {/* Empty on purpose while the match is out: the chip is the mark, and
+          it breathes. The card already carries "still playing" for a reader
+          that isn't looking at it. */}
+      <span className={`v ${playing ? "live" : side.result}`}>
+        {playing ? null : side.result}
       </span>
     </span>
   );
@@ -176,7 +178,7 @@ function Ghost({ node }: { node: BracketNode }) {
 }
 
 export default function BracketBoard({
-  circuit,
+  circuit: served,
   initialTid,
   initialDivision,
 }: {
@@ -185,12 +187,9 @@ export default function BracketBoard({
   initialDivision?: string;
 }) {
   const router = useRouter();
+  const circuit = useCircuit(served);
 
-  const [tid, setTid] = useState(
-    initialTid && circuit.some((e) => e.tid === initialTid)
-      ? initialTid
-      : (circuit.find((e) => e.tid)?.tid ?? "0000191"),
-  );
+  const [tid, setTid] = useEventTid(served, initialTid);
   const [division, setDivision] = useState<Division>(asDivision(initialDivision));
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -285,7 +284,7 @@ export default function BracketBoard({
         />
       </header>
 
-      <SourceBanner source={source} />
+      <SourceBanner source={source} tid={tid} />
       {error && !players && (
         <div className="banner">
           <b>Couldn&apos;t load standings.</b> {error}

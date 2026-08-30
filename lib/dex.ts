@@ -1,6 +1,7 @@
 import pokedex from "@/data/pokedex.json";
 import champions from "@/data/champions.json";
 import items from "@/data/items.json";
+import moveTypes from "@/data/move-types.json";
 
 export type PokemonType =
   | "normal" | "fire" | "water" | "electric" | "grass" | "ice"
@@ -12,6 +13,7 @@ interface DexEntry { id: number; types: string[]; ability?: string }
 const DEX = pokedex as Record<string, DexEntry>;
 const CHAMPIONS = champions as Record<string, string>;
 const ITEMS = items as Record<string, string>;
+const MOVE_TYPES = moveTypes as Record<string, string>;
 
 /** How many Pokémon Champions menu icons are installed. 0 = none downloaded. */
 export const CHAMPIONS_COUNT = Object.keys(CHAMPIONS).length;
@@ -52,6 +54,23 @@ export function slugify(s: string): string {
 }
 
 export const itemSlug = (item: string): string => slugify(item);
+
+/**
+ * A move's typing, for the coloured pill it sits in on a team card.
+ *
+ * Deliberately not read from the effect popovers' data: that arrives one word
+ * at a time on hover, and a card has four moves that all need a colour before
+ * anyone points at anything. data/move-types.json is the same build's output,
+ * cut down to the one field the layout needs — see scripts/build-effects.mjs.
+ *
+ * Null for a move upstream has never heard of, which the card draws neutral.
+ * Also null in effect for the handful of Shadow moves, which carry a type no
+ * icon or colour exists for; TypeIcon and typeColor both fall back on their
+ * own, so this doesn't have to filter them out.
+ */
+export function moveType(move: string): string | null {
+  return MOVE_TYPES[slugify(move)] ?? null;
+}
 
 /**
  * "tough-claws" -> "Tough Claws". The inverse of slugify() for the shapes

@@ -22,6 +22,18 @@ function rgba(hex: string, alpha: number): string {
 }
 
 /**
+ * The same type colour, weak enough to sit behind text. Composited over
+ * whichever card is underneath rather than mixed against a fixed paper, so
+ * one value works in both themes — a 13% wash reads as a tint on white and
+ * as the same tint on the dark card.
+ *
+ * Only for surfaces. A type colour at full strength is a fill you put white
+ * on (see .typepill); this is a fill you put --ink on.
+ */
+export const typeTint = (t: string | undefined | null, alpha: number) =>
+  rgba(typeColor(t ?? undefined), alpha);
+
+/**
  * Icons from https://github.com/partywhale/pokemon-type-icons — vector
  * recreations of the BDSP / Legends: Arceus / Scarlet & Violet type icons.
  * MIT License (c) 2022 James Watkins.
