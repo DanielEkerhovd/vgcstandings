@@ -6,6 +6,8 @@ export type Tier = "Worlds" | "Intl" | "Regional" | "Special" | "Cup" | "Event";
 export interface CircuitEvent {
   /** pokedata tournament id — present only once results exist. */
   tid: string | null;
+  /** URL segment: "2026-world-championship". Empty when the date won't parse. */
+  slug: string;
   /** ISO date of day one, for sorting and grouping. */
   start: string;
   /** The original human date range, e.g. "August 28-30, 2026". */
@@ -58,17 +60,42 @@ export function prettyName(name: string): string {
     .trim();
 }
 
+/**
+ * The URL segment for an event: "2026-world-championship",
+ * "2026-indianapolis-regional-championships".
+ *
+ * Built from the pretty label and the year rather than the tid, because the
+ * words are the whole point — a path with "worlds 2026" in it can rank for
+ * someone searching those words, and `?tid=0000191` never will. The tid stays
+ * the key everything internal uses; this is only the address.
+ */
+export function eventSlug(label: string, start: string): string {
+  const year = start.slice(0, 4);
+  const base = label
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return year ? `${year}-${base}` : base;
+}
+
 /** Events that already have standings, newest first, from pokedata's index. */
 export function toCircuit(events: EventSummary[]): CircuitEvent[] {
-  return events.map((e) => ({
-    tid: e.tid,
-    start: parseStart(e.dates) ?? "",
-    dates: e.dates,
-    label: prettyName(e.name),
-    tier: tierOf(e.name),
-    country: null,
-    status: "done" as const,
-  }));
+  return events.map((e) => {
+    const start = parseStart(e.dates) ?? "";
+    const label = prettyName(e.name);
+    return {
+      tid: e.tid,
+      slug: eventSlug(label, start),
+      start,
+      dates: e.dates,
+      label,
+      tier: tierOf(e.name),
+      country: null,
+      status: "done" as const,
+    };
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -92,6 +119,7 @@ const FALLBACK = upcomingFallback as UpcomingRow[];
 
 const toEvent = (r: UpcomingRow): CircuitEvent => ({
   tid: null,
+  slug: eventSlug(r.label, r.start),
   start: r.start,
   dates: r.dates,
   label: r.label,
@@ -105,6 +133,7 @@ export async function listUpcoming(): Promise<CircuitEvent[]> {
     const res = await fetch("https://rk9.gg/events/pokemon", {
       headers: { "user-agent": UA },
       next: { revalidate: 21600 }, // the schedule moves a few times a season
+      signal: AbortSignal.timeout(4000),
     });
     if (!res.ok) throw new Error(String(res.status));
     const html = await res.text();
@@ -129,6 +158,7 @@ export async function listUpcoming(): Promise<CircuitEvent[]> {
 
       rows.push({
         tid: null,
+        slug: eventSlug(prettyName(name), start),
         start,
         dates,
         label: prettyName(name),

@@ -41,10 +41,14 @@ export default function EventPicker({
   circuit,
   tid,
   onPick,
+  pending = false,
 }: {
   circuit: CircuitEvent[];
   tid: string;
   onPick: (tid: string) => void;
+  /** The picked event is being fetched. The name dims where you clicked it,
+   *  rather than the page freezing on rows that are about to be replaced. */
+  pending?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -150,9 +154,14 @@ export default function EventPicker({
 
   return (
     <div className="picker" ref={wrap}>
+      {/* The event name is the page's heading, so it has to be an <h1> and not
+          just big text — it's the line search engines quote. A button is
+          phrasing content, so it's allowed to sit inside one. */}
+      <h1 className="picker-h1">
       <button
         className="picker-trigger"
         aria-expanded={open}
+        data-pending={pending || undefined}
         onClick={() => setOpen((v) => !v)}
         title="Choose an event"
       >
@@ -168,6 +177,7 @@ export default function EventPicker({
           />
         </svg>
       </button>
+      </h1>
 
       {open && (
         <div className="picker-panel" role="dialog" aria-label="Choose an event">

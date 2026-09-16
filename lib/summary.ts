@@ -1,5 +1,5 @@
 import { UA, listEvents, normalize, type Player, type RawPlayer } from "./pokedata";
-import { prettyName, tierOf, type Tier } from "./events";
+import { eventSlug, prettyName, tierOf, toCircuit, type CircuitEvent, type Tier } from "./events";
 
 /**
  * A server-side read of one event, for the things that have to be true before
@@ -40,6 +40,9 @@ async function meta(tid: string, division: string) {
     const res = await fetch(`https://www.pokedata.ovh/standingsVGC/${tid}/${division}/`, {
       headers: { "user-agent": UA },
       next: { revalidate: 30 },
+      // Rendering waits on this. One person's server having a bad afternoon
+      // must not turn into a page that never answers.
+      signal: AbortSignal.timeout(4000),
     });
     if (!res.ok) return null;
     const text = (await res.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -77,7 +80,11 @@ export async function eventSnapshot(
 
   try {
     const [res, events, line] = await Promise.all([
-      fetch(url, { headers: { "user-agent": UA }, next: { revalidate: 30 } }),
+      fetch(url, {
+        headers: { "user-agent": UA },
+        next: { revalidate: 30 },
+        signal: AbortSignal.timeout(4000),
+      }),
       listEvents(),
       meta(tid, division),
     ]);
@@ -137,3 +144,32 @@ export function ordinal(n: number) {
   const v = n % 100;
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
+
+/* ------------------------------------------------------------------ *
+ * Slugs
+ *
+ * Pokédata has no slugs, only 7-digit ids, so the mapping is built from the
+ * catalogue on every request — a cached fetch that the event picker already
+ * makes anyway. Unknown slug means the event fell off the index or the URL was
+ * invented, and both should 404 rather than quietly show the newest event.
+ * ------------------------------------------------------------------ */
+
+export async function circuitEvents(): Promise<CircuitEvent[]> {
+  return toCircuit(await listEvents());
+}
+
+export async function eventBySlug(slug: string): Promise<CircuitEvent | null> {
+  const events = await circuitEvents();
+  return events.find((e) => e.slug === slug) ?? null;
+}
+
+/** The event the site opens on: whatever pokedata listed most recently. */
+export async function latestEvent(): Promise<CircuitEvent | null> {
+  return (await circuitEvents())[0] ?? null;
+}
+
+/** `/event/2026-world-championship/masters` for a given event. */
+export const eventPath = (slug: string, division: Division) =>
+  `/event/${slug}/${division}`;
+
+export { eventSlug };

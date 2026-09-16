@@ -1,8 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import type { CircuitEvent } from "@/lib/events";
+import { useCallback, useMemo } from "react";
 import {
   buildBracket,
   roundSizes,
@@ -12,23 +10,8 @@ import {
 } from "@/lib/bracket";
 import { countryName } from "@/lib/search";
 import MatchModal from "./MatchModal";
-import {
-  BracketSkeleton,
-  Credits,
-  DensityToggle,
-  EventControls,
-  Masthead,
-  RoundProgress,
-  SourceBanner,
-  asDivision,
-  stageOf,
-  type Division,
-  useAgo,
-  useCircuit,
-  useEventTid,
-  useDensity,
-  useStandings,
-} from "./shared";
+import { useEvent } from "./EventShell";
+import { BracketSkeleton, RoundProgress, stageOf, useOpenRow } from "./shared";
 
 const rec = (r: { wins: number; losses: number; ties: number } | null) =>
   r ? `${r.wins}-${r.losses}-${r.ties}` : null;
@@ -177,29 +160,14 @@ function Ghost({ node }: { node: BracketNode }) {
   );
 }
 
-export default function BracketBoard({
-  circuit: served,
-  initialTid,
-  initialDivision,
-}: {
-  circuit: CircuitEvent[];
-  initialTid?: string;
-  initialDivision?: string;
-}) {
-  const router = useRouter();
-  const circuit = useCircuit(served);
+/**
+ * The reconstructed top cut. The event, the chrome and the rows themselves
+ * belong to `EventShell` one level up — see the layout for why.
+ */
+export default function BracketBoard() {
+  const { tid, division, players, meta, source, error } = useEvent();
 
-  const [tid, setTid] = useEventTid(served, initialTid);
-  const [division, setDivision] = useState<Division>(asDivision(initialDivision));
-  const [openId, setOpenId] = useState<string | null>(null);
-
-  const { players, meta, source, fetchedAt, error, loading } = useStandings(tid, division);
-  const { compact, toggle: toggleDensity } = useDensity();
-  const ago = useAgo(fetchedAt);
-
-  useEffect(() => {
-    router.replace(`/bracket?tid=${tid}&division=${division}`, { scroll: false });
-  }, [tid, division, router]);
+  const [openId, setOpenId] = useOpenRow(`${tid}-${division}`);
 
   const bracket = useMemo(
     () => buildBracket(players, meta.rounds, meta.ended),
@@ -231,7 +199,7 @@ export default function BracketBoard({
         document.getElementById(`bn-${encodeURIComponent(id)}`)?.focus(),
       );
     }
-  }, [openId]);
+  }, [openId, setOpenId]);
 
   /** One source for a round's name, so the column heading and the match
    *  detail's title can't drift apart. */
@@ -248,7 +216,6 @@ export default function BracketBoard({
     [meta.rounds, meta.cutSize, bracket],
   );
 
-  const event = circuit.find((e) => e.tid === tid);
   const lastRound = useMemo(() => {
     if (!players) return null;
     const sizes = roundSizes(players);
@@ -257,43 +224,12 @@ export default function BracketBoard({
   }, [players]);
 
   return (
-    <div className="shell">
-      <header className="masthead">
-        <Masthead
-          circuit={circuit}
-          tid={tid}
-          onPick={(v) => {
-            setTid(v);
-            setOpenId(null);
-          }}
-          meta={meta}
-          source={source}
-          ago={ago}
-          loading={loading}
-          hasData={Boolean(players)}
-        />
-
-        <EventControls
-          active="bracket"
-          division={division}
-          onDivision={(d) => {
-            setDivision(d);
-            setOpenId(null);
-          }}
-          right={<DensityToggle compact={compact} onToggle={toggleDensity} />}
-        />
-      </header>
-
-      <SourceBanner source={source} tid={tid} />
-      {error && !players && (
-        <div className="banner">
-          <b>Couldn&apos;t load standings.</b> {error}
-        </div>
-      )}
-
-      {/* Remounted on every event or division change so the new tree grows in
-          as one thing. The match detail is deliberately outside it — a modal
-          isn't part of the board, and it has its own way in. */}
+    /* The board is remounted on every event or division change so the new tree
+       grows in as one thing. The match detail sits outside `.viewswap` — a
+       modal isn't part of the board, it has its own way in, and `.viewswap`
+       scales as it arrives, which would leave a `position: fixed` panel
+       resolving against this box instead of the window. */
+    <>
       <div className="viewswap" key={`${tid}-${division}`}>
         {!players && !error && <BracketSkeleton />}
 
@@ -383,8 +319,6 @@ export default function BracketBoard({
         )}
       </div>
 
-      <Credits event={event} />
-
       {openNode && (
         <MatchModal
           node={openNode}
@@ -392,6 +326,6 @@ export default function BracketBoard({
           onClose={closeMatch}
         />
       )}
-    </div>
+    </>
   );
 }

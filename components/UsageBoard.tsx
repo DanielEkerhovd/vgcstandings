@@ -3,74 +3,47 @@
 import {
   useMemo,
   useRef,
-  useState,
   useEffect,
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
-import { monDetail, usage, type MonDetail, type Tally } from "@/lib/pokedata";
+import { monDetail, type MonDetail, type Tally } from "@/lib/pokedata";
 import { natureShift } from "@/lib/natures";
-import type { CircuitEvent } from "@/lib/events";
 import { resolveMon } from "@/lib/dex";
 import { TypeIcon, typeColor } from "@/lib/types";
 import type { EffectKind } from "@/lib/effects";
+import { useEvent } from "./EventShell";
 import {
   Collapse,
-  Credits,
-  DensityToggle,
-  EventControls,
   Explain,
   ItemArt,
-  Masthead,
   MonArt,
-  SourceBanner,
   UsageSkeleton,
-  asDivision,
-  type Division,
-  useAgo,
-  useCircuit,
-  useEventTid,
-  useDensity,
   useLingering,
-  useStandings,
+  useOpenRow,
 } from "./shared";
 
+/**
+ * The usage tally. The event, the chrome and the rows themselves belong to
+ * `EventShell` one level up — including the fold that produces `rows`, so the
+ * count in the toolbar and the list under it can't disagree.
+ */
 export default function UsageBoard({
-  circuit: served,
-  initialTid,
-  initialDivision,
   initialMon,
 }: {
-  circuit: CircuitEvent[];
-  initialTid?: string;
-  initialDivision?: string;
   /** ?mon= — a team card on another tab linked straight to this species. */
   initialMon?: string;
 }) {
-  const router = useRouter();
-  const circuit = useCircuit(served);
+  const { tid, division, players, error, query, usageRows: rows, known } = useEvent();
 
-  const [tid, setTid] = useEventTid(served, initialTid);
-  const [division, setDivision] = useState<Division>(asDivision(initialDivision));
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState<string | null>(initialMon ?? null);
+  const [open, setOpen] = useOpenRow(`${tid}-${division}`, initialMon ?? null);
   /** Which panel is *mounted* — the open one, plus, for as long as it takes
    *  to shrink, the one that has just been closed. */
   const shown = useLingering(open);
 
-  const { players, meta, source, fetchedAt, error, loading } = useStandings(tid, division);
-  const { compact, toggle: toggleDensity } = useDensity();
-  const ago = useAgo(fetchedAt);
-
   // Which row is open rides along in the URL, so the link a team card built
   // is the same link this page hands back — refresh or share it and the same
   // panel is open. Names carry spaces and brackets, hence URLSearchParams.
-  useEffect(() => {
-    const qs = new URLSearchParams({ tid, division });
-    if (open) qs.set("mon", open);
-    router.replace(`/usage?${qs}`, { scroll: false });
-  }, [tid, division, open, router]);
 
   // Arriving on ?mon=, the panel is open from the first paint but there is
   // nothing to scroll to until the standings land and the list exists. Once
@@ -89,19 +62,7 @@ export default function UsageBoard({
     }
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "center" });
-  }, [players, open]);
-
-  /** Players whose team list is public — the only ones usage can be read from. */
-  const known = useMemo(
-    () => (players ?? []).filter((p) => p.hasTeam).length,
-    [players],
-  );
-
-  const rows = useMemo(() => {
-    if (!players) return [];
-    const q = query.trim().toLowerCase();
-    return usage(players).filter((m) => !q || m.name.toLowerCase().includes(q));
-  }, [players, query]);
+  }, [players, open, setOpen]);
 
   /** Folded only for the row that's actually on screen — one pass, not 300.
    *  Off `shown` rather than `open`, or a closing panel would lose its
@@ -121,125 +82,71 @@ export default function UsageBoard({
   );
 
   const max = rows[0]?.count ?? 1;
-  const event = circuit.find((e) => e.tid === tid);
 
   return (
-    <div className="shell">
-      <header className="masthead">
-        <Masthead
-          circuit={circuit}
-          tid={tid}
-          onPick={(v) => {
-            setTid(v);
-            setOpen(null);
-          }}
-          meta={meta}
-          source={source}
-          ago={ago}
-          loading={loading}
-          hasData={Boolean(players)}
-        />
+    /* Remounted on every event or division change, so the new tally grows in as
+       one thing instead of blinking over the old one. The header stays outside
+       — it's the shell's, and a switch between the three views doesn't
+       re-render it at all: the chrome doesn't move, only what it describes. */
+    <div className="viewswap" key={`${tid}-${division}`}>
+      {!players && !error && <UsageSkeleton />}
 
-        <EventControls
-          active="usage"
-          division={division}
-          onDivision={(d) => {
-            setDivision(d);
-            setOpen(null);
-          }}
-          right={
-            <>
-              {players && (
-                <span className="meta">
-                  <b>{rows.length}</b> Pokémon · <b>{known}</b> teams
+      <ol className="usagelist">
+        {rows.map((m, i) => {
+          const r = resolveMon(m.name);
+          const pct = known ? (m.count / known) * 100 : 0;
+          const isOpen = open === m.name;
+          return (
+            <li key={m.name} id={`usage-${encodeURIComponent(m.name)}`}>
+              <button
+                className={`usagerow${isOpen ? " open" : ""}`}
+                aria-expanded={isOpen}
+                onClick={() => setOpen(isOpen ? null : m.name)}
+                title={`Items, moves and teammates for ${m.name}`}
+              >
+                <span className="pos">{i + 1}</span>
+                <MonArt name={m.name} variant="row" />
+                <span className="nm">
+                  <span className="label">{m.name}</span>
+                  {r.types.length > 0 && (
+                    <span className="typepills">
+                      {r.types.map((t) => (
+                        <span key={t} className="typepill" style={{ background: typeColor(t) }}>
+                          <TypeIcon type={t} size={10} />
+                          {t}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </span>
-              )}
-              <DensityToggle compact={compact} onToggle={toggleDensity} />
-            </>
-          }
-        >
-          <input
-            className="search"
-            placeholder="Search Pokémon…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search Pokémon"
-          />
-        </EventControls>
-      </header>
+                <span className="bar" aria-hidden="true">
+                  <span
+                    className="fill"
+                    style={{
+                      width: `${(m.count / max) * 100}%`,
+                      background: typeColor(r.types[0]),
+                    }}
+                  />
+                </span>
+                <span className="count">{m.count}</span>
+                <span className="pct">{pct.toFixed(1)}%</span>
+              </button>
 
-      <SourceBanner source={source} tid={tid} />
-      {error && !players && (
-        <div className="banner">
-          <b>Couldn&apos;t load standings.</b> {error}
+              {shown === m.name && detail && (
+                <Collapse open={isOpen}>
+                  <MonDetailPanel name={m.name} detail={detail} />
+                </Collapse>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+
+      {players && rows.length === 0 && (
+        <div className="empty">
+          Nothing matches{query && ` “${query}”`}.
         </div>
       )}
-
-      {/* Remounted on every event or division change, so the new tally grows
-          in as one thing instead of blinking over the old one. The header
-          stays outside — the chrome doesn't move, only what it describes. */}
-      <div className="viewswap" key={`${tid}-${division}`}>
-        {!players && !error && <UsageSkeleton />}
-
-        <ol className="usagelist">
-          {rows.map((m, i) => {
-            const r = resolveMon(m.name);
-            const pct = known ? (m.count / known) * 100 : 0;
-            const isOpen = open === m.name;
-            return (
-              <li key={m.name} id={`usage-${encodeURIComponent(m.name)}`}>
-                <button
-                  className={`usagerow${isOpen ? " open" : ""}`}
-                  aria-expanded={isOpen}
-                  onClick={() => setOpen(isOpen ? null : m.name)}
-                  title={`Items, moves and teammates for ${m.name}`}
-                >
-                  <span className="pos">{i + 1}</span>
-                  <MonArt name={m.name} variant="row" />
-                  <span className="nm">
-                    <span className="label">{m.name}</span>
-                    {r.types.length > 0 && (
-                      <span className="typepills">
-                        {r.types.map((t) => (
-                          <span key={t} className="typepill" style={{ background: typeColor(t) }}>
-                            <TypeIcon type={t} size={10} />
-                            {t}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </span>
-                  <span className="bar" aria-hidden="true">
-                    <span
-                      className="fill"
-                      style={{
-                        width: `${(m.count / max) * 100}%`,
-                        background: typeColor(r.types[0]),
-                      }}
-                    />
-                  </span>
-                  <span className="count">{m.count}</span>
-                  <span className="pct">{pct.toFixed(1)}%</span>
-                </button>
-
-                {shown === m.name && detail && (
-                  <Collapse open={isOpen}>
-                    <MonDetailPanel name={m.name} detail={detail} />
-                  </Collapse>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-
-        {players && rows.length === 0 && (
-          <div className="empty">
-            Nothing matches{query && ` “${query}”`}.
-          </div>
-        )}
-      </div>
-
-      <Credits event={event} />
     </div>
   );
 }

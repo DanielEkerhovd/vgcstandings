@@ -306,6 +306,7 @@ export async function listEvents(): Promise<EventSummary[]> {
     const res = await fetch("https://www.pokedata.ovh/standingsVGC/", {
       headers: { "user-agent": UA },
       next: { revalidate: 3600 }, // the catalogue changes a few times a month
+      signal: AbortSignal.timeout(4000),
     });
     if (!res.ok) return FALLBACK_EVENTS;
 

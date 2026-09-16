@@ -553,21 +553,39 @@ export function eventFinished(meta: EventMeta): boolean {
   return lastRoundIn || meta.ended;
 }
 
+/**
+ * Rows rendered on the server, handed to the first client render so the HTML
+ * arrives with the table already in it. Without this the page ships an empty
+ * shell and fills it in after mount — fine for a person, useless to a crawler,
+ * which is why every event page used to contain no player names at all.
+ */
+export interface StandingsSeed {
+  /** `${tid}/${division}` the rows belong to; ignored if it doesn't match. */
+  key: string;
+  players: Player[];
+  meta: EventMeta;
+}
+
 export function useStandings(
   tid: string,
   division: Division,
   intervalMs = 30_000,
+  seed?: StandingsSeed | null,
 ) {
-  const [players, setPlayers] = useState<Player[] | null>(null);
-  const [meta, setMeta] = useState<EventMeta>(NO_META);
-  const [source, setSource] = useState<Source>(null);
-  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  const fresh = seed && seed.key === `${tid}/${division}` ? seed : null;
+
+  const [players, setPlayers] = useState<Player[] | null>(fresh?.players ?? null);
+  const [meta, setMeta] = useState<EventMeta>(fresh?.meta ?? NO_META);
+  const [source, setSource] = useState<Source>(fresh ? "live" : null);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(fresh ? Date.now() : null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!fresh);
 
   const keyRef = useRef(`${tid}/${division}`);
   keyRef.current = `${tid}/${division}`;
   const endedRef = useRef(false);
+  /** The seed is only good for the render it arrived in. */
+  const seedSpent = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -575,12 +593,19 @@ export function useStandings(
     // Drop the previous event's rows: showing them under a new event's
     // header would be a lie, and it's what the skeleton is for. Polling the
     // *same* event doesn't come through here, so refreshes never flash.
-    setLoading(true);
-    setPlayers(null);
-    setMeta(NO_META);
-    setSource(null);
-    setFetchedAt(null);
-    setError(null);
+    // First pass with server rows: leave them up. The tick below still runs
+    // immediately, so anything that changed since the HTML was built lands
+    // within a second — it just doesn't flash a skeleton to get there.
+    const keepSeed = Boolean(fresh) && !seedSpent.current;
+    seedSpent.current = true;
+    if (!keepSeed) {
+      setLoading(true);
+      setPlayers(null);
+      setMeta(NO_META);
+      setSource(null);
+      setFetchedAt(null);
+      setError(null);
+    }
     endedRef.current = false;
 
     const tick = async () => {
@@ -876,6 +901,25 @@ export function useEventTid(circuit: CircuitEvent[], initial?: string) {
   }, [initial]);
 
   return [tid, setTid] as const;
+}
+
+/**
+ * Which row is expanded, closed again whenever the rows underneath change.
+ *
+ * Picking a real event navigates, and Next remounts the segment, so the boards
+ * start clean on their own. Picking a *fixture* doesn't — it swaps the rows
+ * under a shell that stays mounted — and a name held over from the last set
+ * would open a row in this one if both happen to contain it. Adjusted during
+ * render rather than in an effect, so nothing renders open for a frame first.
+ */
+export function useOpenRow(key: string, initial: string | null = null) {
+  const [open, setOpen] = useState<string | null>(initial);
+  const seen = useRef(key);
+  if (seen.current !== key) {
+    seen.current = key;
+    if (open !== null) setOpen(null);
+  }
+  return [open, setOpen] as const;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1174,6 +1218,24 @@ export function StarButton({
 const jitter = (i: number, lo: number, hi: number) =>
   lo + ((i * 37) % 100) / 100 * (hi - lo);
 
+/** The standings' column headings. Shared with the route's loading state, so
+ *  the skeleton stands under the same columns and nothing shifts when the rows
+ *  land on top of it. */
+export function StandingsHead() {
+  return (
+    <div className="key">
+      <span></span>
+      <span><span className="sr">Favourite</span></span>
+      <span>Player</span>
+      <span className="h-team">Team</span>
+      <span className="h-rec">Record</span>
+      <span className="r">Pts</span>
+      <span className="r h-res1">Opp</span>
+      <span className="r h-res2">Opp·opp</span>
+    </div>
+  );
+}
+
 export function StandingsSkeleton({ rows = 10 }: { rows?: number }) {
   return (
     <div className="skwrap" role="status" aria-live="polite">
@@ -1249,26 +1311,100 @@ export function BracketSkeleton() {
   );
 }
 
+/**
+ * The placeholder for a whole view, as the three `loading.tsx` files draw it
+ * and as `EventShell` draws it the moment a section link is clicked. One
+ * component for both so the two are the same pixels: the shell's copy is what
+ * you see while the router waits for the server, and if the page then streams
+ * in behind its own `loading.tsx`, the same thing is already on screen.
+ *
+ * `.skgate` holds it invisible for 120ms, so a switch the router already had
+ * in hand shows nothing at all — see globals.css.
+ */
+export function ViewSkeleton({ view }: { view: Section }) {
+  return (
+    <div className="viewswap skgate">
+      {view === "usage" ? (
+        <UsageSkeleton />
+      ) : view === "bracket" ? (
+        <BracketSkeleton />
+      ) : (
+        <>
+          <StandingsHead />
+          <div className="rows">
+            <StandingsSkeleton />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * Shared chrome
  * ------------------------------------------------------------------ */
 
 export type Section = "standings" | "usage" | "bracket";
 
-export function Nav({ active }: { active: Section }) {
-  // The event and division live in the URL already; Link picks them up from
-  // window.location so the section switch never loses your place.
-  const qs = typeof window === "undefined" ? "" : window.location.search;
+export function Nav({
+  active,
+  slug,
+  division,
+  onView,
+}: {
+  active: Section;
+  /** The event being viewed, when there is one. */
+  slug?: string | null;
+  division?: Division;
+  /** Given, the shell drives the switch itself — see `EventShell` for why a
+   *  plain click on a section link shows nothing until the server answers.
+   *  The links stay real links: a crawler, a middle-click and a copied
+   *  address all still get the URL. */
+  onView?: (view: Section, href: string) => void;
+}) {
+  // Real hrefs to the three views of *this* event. They were query strings
+  // read off window.location, which meant the server rendered three links to
+  // the site root and a crawler could never walk from standings to usage.
+  const base = slug ? `/event/${slug}/${division ?? "masters"}` : "";
+  const to = (view: Section) =>
+    base
+      ? view === "standings"
+        ? base
+        : `${base}/${view}`
+      : view === "standings"
+        ? "/"
+        : `/${view}`;
+
+  // `onNavigate` only fires for the soft, same-tab navigation Link would
+  // otherwise start itself; modified clicks and a right-click → open never
+  // reach it, so those keep their browser behaviour.
+  const link = (view: Section, label: string) => {
+    const href = to(view);
+    return (
+      <Link
+        href={href}
+        aria-current={active === view ? "page" : undefined}
+        onNavigate={
+          onView && active !== view
+            ? (e) => {
+                e.preventDefault();
+                onView(view, href);
+              }
+            : undefined
+        }
+      >
+        {label}
+      </Link>
+    );
+  };
+
   return (
     <nav className="nav" aria-label="Sections">
-      <Link href={`/${qs}`} aria-current={active === "standings" ? "page" : undefined}>
-        Standings
-      </Link>
-      <Link href={`/usage${qs}`} aria-current={active === "usage" ? "page" : undefined}>
-        Usage
-      </Link>
-      <Link href={`/bracket${qs}`} aria-current={active === "bracket" ? "page" : undefined}>
-        Bracket stage
+      {link("standings", "Standings")}
+      {link("usage", "Usage")}
+      {link("bracket", "Bracket stage")}
+      <Link href="/events" className="all-events">
+        All events
       </Link>
     </nav>
   );
@@ -1284,6 +1420,7 @@ export function Masthead({
   ago,
   loading,
   hasData,
+  pending = false,
 }: {
   circuit: CircuitEvent[];
   tid: string;
@@ -1293,6 +1430,8 @@ export function Masthead({
   ago: string;
   loading: boolean;
   hasData: boolean;
+  /** A picked event is on its way. The trigger dims; the rows stay. */
+  pending?: boolean;
 }) {
   const event = circuit.find((e) => e.tid === tid);
   const live = source === "live" && !meta.ended;
@@ -1304,7 +1443,7 @@ export function Masthead({
       <div className="mast-id">
         <span className="l1">
           {event && <span className="badge">{event.tier}</span>}
-          <EventPicker circuit={circuit} tid={tid} onPick={onPick} />
+          <EventPicker circuit={circuit} tid={tid} onPick={onPick} pending={pending} />
         </span>
         <span className="l2">
           {event?.dates && <span className="meta">{event.dates}</span>}
@@ -1440,18 +1579,27 @@ export function EventControls({
   active,
   division,
   onDivision,
+  onView,
+  slug,
   children,
   right,
+  pending = false,
 }: {
   active: Section;
   division: Division;
   onDivision: (v: Division) => void;
+  /** See `Nav`. */
+  onView?: (view: Section, href: string) => void;
+  /** The current event's URL segment, so the section links point at it. */
+  slug?: string | null;
   children?: React.ReactNode;
   right?: React.ReactNode;
+  /** A picked division is on its way. The thumb has already moved. */
+  pending?: boolean;
 }) {
   return (
     <div className="mast-ctl">
-      <Nav active={active} />
+      <Nav active={active} slug={slug} division={division} onView={onView} />
 
       {/* The gold behind the chosen division is one element that slides,
           rather than a fill appearing on one button and leaving another —
@@ -1462,6 +1610,7 @@ export function EventControls({
         className="segs"
         role="group"
         aria-label="Division"
+        data-pending={pending || undefined}
         style={{ "--n": DIVISIONS.length } as CSSProperties}
       >
         <span

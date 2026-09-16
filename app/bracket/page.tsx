@@ -1,27 +1,72 @@
+import { redirect } from "next/navigation";
+import EventShell from "@/components/EventShell";
 import BracketBoard from "@/components/BracketBoard";
-import { listEvents } from "@/lib/pokedata";
-import { listUpcoming, toCircuit } from "@/lib/events";
+import { listUpcoming } from "@/lib/events";
+import { asDiv, circuitEvents, eventSnapshot, latestEvent } from "@/lib/summary";
 import { eventMetadata } from "@/lib/metadata";
+import { toSeed } from "@/lib/seed";
 
-export const revalidate = 3600;
+/**
+ * The top-cut bracket for whatever event ran most recently.
+ *
+ * Events live at /event/<slug>/<division> now. This stays as the landing page,
+ * and forwards any old `?tid=` link to its real address so the two URLs don't
+ * compete for the same words in search.
+ */
+export const revalidate = 60;
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
-/** Title, description and link-preview card for whatever this URL points at. */
 export async function generateMetadata({ searchParams }: { searchParams: SP }) {
-  return eventMetadata(await searchParams, "bracket");
+  const sp = await searchParams;
+  const latest = await latestEvent();
+  return eventMetadata({
+    tid: one(sp.tid) ?? latest?.tid ?? undefined,
+    division: one(sp.division),
+    player: one(sp.player),
+    canonical: "/bracket",
+    view: "bracket",
+  });
 }
 
-export default async function BracketPage({ searchParams }: { searchParams: SP }) {
+export default async function Page({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
-  const [events, upcoming] = await Promise.all([listEvents(), listUpcoming()]);
-  const circuit = [...toCircuit(events), ...upcoming];
+  const division = asDiv(one(sp.division));
+
+  // Old shared links: send them to the address the page actually lives at.
+  const wanted = one(sp.tid);
+  if (wanted) {
+    const hit = (await circuitEvents()).find((e) => e.tid === wanted);
+    if (hit?.slug) {
+      const player = one(sp.player);
+      redirect(
+        `/event/${hit.slug}/${division}/bracket` +
+          (player ? `?player=${encodeURIComponent(player)}` : ""),
+      );
+    }
+  }
+
+  const latest = await latestEvent();
+  const [circuit, upcoming, snap] = await Promise.all([
+    circuitEvents(),
+    listUpcoming(),
+    latest?.tid ? eventSnapshot(latest.tid, division) : Promise.resolve(null),
+  ]);
+
+  /* The shell is normally the `[division]` layout's, so that a tab click
+     doesn't re-render it. There is no such layout over a landing page — it's
+     one view you tab *out* of, and its nav already points at the latest
+     event's real address — so it wraps its own. */
   return (
-    <BracketBoard
-      circuit={circuit}
-      initialTid={one(sp.tid)}
-      initialDivision={one(sp.division)}
-    />
+    <EventShell
+      circuit={[...circuit, ...upcoming]}
+      initialTid={latest?.tid ?? undefined}
+      division={division}
+      seed={toSeed(snap)}
+      view="bracket"
+    >
+      <BracketBoard />
+    </EventShell>
   );
 }

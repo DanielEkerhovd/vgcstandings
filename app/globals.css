@@ -401,9 +401,9 @@ button { cursor: pointer; }
 .nav a {
   font-size: .82rem; font-weight: 700; text-decoration: none; color: var(--muted);
   padding: .2rem .6rem; border-radius: 8px; border: 1.5px solid transparent;
-  /* The section switch is a navigation, so the new page's link arrives
-     already current and this only ever runs on hover. The arriving content
-     is what carries that movement — see .viewswap. */
+  /* The current pill moves on the click, not when the page lands —
+     EventShell flips it optimistically — so this is the whole of that
+     movement. The board's own arrival is .viewswap's. */
   transition: color .15s ease, background-color .15s ease, border-color .15s ease;
 }
 .nav a:hover { color: var(--ink); }
@@ -1341,6 +1341,26 @@ button.bnode:focus-visible { border-radius: 12px; }
   .sk::after { display: none; }
 }
 
+/* ── waiting on the server ───────────────────────────────── */
+/* A skeleton that appears for 40ms is a flicker, not feedback. Held invisible
+   for 120ms, so a switch the router already had prefetched shows nothing at
+   all and only a real wait draws one. This replaces .viewswap's grow-in
+   deliberately — a placeholder shouldn't arrive as if it were the content.
+   `animation: none`, from the blanket reduced-motion rule below, leaves
+   opacity 1, which is the correct static result. */
+.skgate { animation: fade .18s ease 120ms both; }
+
+/* Picking a different event or division is the one navigation that still has
+   to wait for the server — the three views share a layout and don't. Rather
+   than freeze on rows that are about to be replaced, the control you touched
+   dims where you touched it, behind the same delay as the skeleton so a fast
+   switch never blinks. The division thumb has already moved: it doesn't wait
+   for the round trip to say where it's going. */
+.segs[data-pending], .picker-trigger[data-pending] {
+  animation: dim .18s ease 120ms both;
+}
+@keyframes dim { to { opacity: .55; } }
+
 /* ── event picker (the season timeline) ──────────────────── */
 .picker { position: relative; }
 .picker-trigger {
@@ -1514,3 +1534,26 @@ footer.foot a { color: var(--ink); }
   .row .team, .row .res { display: none; }
 }
 
+
+/* The event index. Plain links, because a dropdown is invisible to a crawler
+   and this page is the only way anything past the newest event gets found. */
+.evlist { list-style: none; margin: 0 0 1.6rem; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+.evlist li {
+  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+  background: var(--card); border: 1.5px solid var(--hair); border-radius: 999px;
+  padding: .5rem 1rem;
+}
+.evlist li > a { display: flex; align-items: center; gap: .7rem; flex: 1; min-width: 12rem;
+  text-decoration: none; color: var(--ink); }
+.evlist li > a:hover .evname { text-decoration: underline; }
+.evname { font-weight: 700; font-size: .92rem; }
+.evdate { font-family: var(--mono); font-size: .7rem; color: var(--muted); }
+.evdivs { display: flex; gap: .5rem; font-size: .74rem; color: var(--muted); flex-wrap: wrap; }
+.evdivs a { color: var(--muted); text-decoration: none; }
+.evdivs a:hover { color: var(--ink); text-decoration: underline; }
+.evlist li.soon { opacity: .6; }
+
+/* The event name is the page's <h1>; the heading itself is only a wrapper so
+   the picker button keeps the layout it had. */
+.picker-h1 { margin: 0; font: inherit; display: flex; align-items: center; min-width: 0; }
+.nav a.all-events { margin-left: .35rem; opacity: .75; }
