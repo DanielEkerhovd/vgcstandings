@@ -637,10 +637,27 @@ export function useStandings(
           // the file, which put the whole strip a stage behind. The file can
           // also trail, when the round is called before pairings are written.
           // Whichever is further along is the round people are watching.
-          const played = rows.reduce(
-            (m, p) => Math.max(m, p.matches.at(-1)?.round ?? 0),
-            0,
-          );
+          //
+          // But not the highest round *anyone* carries. At Baltimore 2026 one
+          // player out of 1081 had a round-4 pairing written while the other
+          // 1080 were on round 3, and the max dragged the whole strip a round
+          // ahead. A round has been reached when the field has reached it:
+          // at least two players, and at least half as many as the round
+          // before — which is exactly what a bracket round is (8 → 4 → 2),
+          // and what a Swiss round is many times over.
+          const perRound = new Map<number, number>();
+          for (const p of rows) {
+            for (const m of p.matches) {
+              perRound.set(m.round, (perRound.get(m.round) ?? 0) + 1);
+            }
+          }
+          let played = 0;
+          for (let n = 1; perRound.has(n); n++) {
+            const here = perRound.get(n) ?? 0;
+            const prev = n === 1 ? here : perRound.get(n - 1) ?? 0;
+            if (here < 2 || here < prev / 2) break;
+            played = n;
+          }
           const round = Math.max(num("x-round") ?? 0, played) || null;
           const rounds = num("x-rounds");
 

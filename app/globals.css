@@ -808,6 +808,10 @@ button { cursor: pointer; }
 .moncard.hit { border-color: var(--hit); }
 
 .empty { padding: 2.2rem 1rem; text-align: center; color: var(--muted); font-size: .88rem; }
+/* .prog is inline-flex for the masthead, where it sits in a row of chips. In
+   an empty-state paragraph that glues it to the last full stop, so here it
+   drops to its own centred line under the text. */
+.empty .prog { display: flex; justify-content: center; margin-top: .9rem; }
 
 /* ── usage page ──────────────────────────────────────────── */
 .usagelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--row-gap); }
