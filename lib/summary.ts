@@ -1,5 +1,6 @@
 import { UA, listEvents, normalize, type Player, type RawPlayer } from "./pokedata";
 import { eventSlug, prettyName, tierOf, toCircuit, type CircuitEvent, type Tier } from "./events";
+import { fetchStandingsFile } from "./upstream";
 
 /**
  * A server-side read of one event, for the things that have to be true before
@@ -79,18 +80,15 @@ export async function eventSnapshot(
   const url = `https://www.pokedata.ovh/standingsVGC/${tid}/${division}/${file}`;
 
   try {
-    const [res, events, line] = await Promise.all([
-      fetch(url, {
-        headers: { "user-agent": UA },
-        next: { revalidate: 30 },
-        signal: AbortSignal.timeout(4000),
-      }),
+    const [file, events, line] = await Promise.all([
+      // Same in-memory copy the proxy route serves, so the HTML and the first
+      // client refresh agree. Not Next's fetch cache — lib/upstream.ts says why.
+      fetchStandingsFile(url, 4000),
       listEvents(),
       meta(tid, division),
     ]);
-    if (!res.ok) return null;
 
-    const standings = normalize((await res.json()) as RawPlayer[]).sort(
+    const standings = normalize(JSON.parse(file.text) as RawPlayer[]).sort(
       (a, b) => a.placing - b.placing,
     );
     if (standings.length === 0) return null;

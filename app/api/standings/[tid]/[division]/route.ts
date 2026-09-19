@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { UA, type RawPlayer } from "@/lib/pokedata";
+import { fetchStandingsFile } from "@/lib/upstream";
 import { fixtureFor } from "@/lib/fixtures";
 import sample from "@/data/worlds-2026-masters-sample.json";
 
@@ -110,24 +111,20 @@ export async function GET(
   const url = `https://www.pokedata.ovh/${tree}/${tid}/${division}/${file}`;
 
   try {
-    const upstream = await fetch(url, {
-      headers: { "user-agent": UA },
-      // One upstream request per 30s no matter how many browsers are open.
-      // Their file only changes about once a minute; polling faster is waste.
-      next: { revalidate: 30 },
-    });
-
-    if (!upstream.ok) throw new Error(`upstream ${upstream.status}`);
+    // One upstream request per 30s no matter how many browsers are open.
+    // Their file only changes about once a minute; polling faster is waste.
+    // Not `next: { revalidate }` — lib/upstream.ts says why.
+    const upstream = await fetchStandingsFile(url);
 
     const meta = await fetchMeta(tree, tid, division);
 
-    return new Response(await upstream.text(), {
+    return new Response(upstream.text, {
       headers: {
         "content-type": "application/json; charset=utf-8",
         "cache-control": "public, s-maxage=30, stale-while-revalidate=120",
         "x-source": "live",
         // Their file mtime IS the "last updated" the site shows.
-        "x-upstream-modified": upstream.headers.get("last-modified") ?? "",
+        "x-upstream-modified": upstream.lastModified,
         ...meta,
       },
     });

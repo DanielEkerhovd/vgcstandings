@@ -130,9 +130,13 @@ mode. That bug has been fixed once already.
 - pokedata.ovh sends no CORS header, so **every** request to it goes through
   `app/api/standings/[tid]/[division]/route.ts`. Never fetch it from a client
   component.
-- `next: { revalidate: 30 }` on the standings fetch is deliberate. It collapses
-  all visitors into one upstream request per 30 seconds. Their file changes about
-  once a minute and it's one person's server, not a CDN. Don't lower it.
+- The standings file is fetched only through `lib/upstream.ts`, which holds
+  one copy in memory for 30 seconds and shares an in-flight request. That
+  collapses all visitors into one upstream request per 30 seconds; their file
+  changes about once a minute and it's one person's server, not a CDN. Don't
+  lower it, and don't go back to `next: { revalidate: 30 }`: Next's data cache
+  refuses entries over 2 MB, and a regional with team lists is bigger than
+  that. Baltimore 2026 served an hour-old file for exactly that reason.
 - The upstream JSON filename capitalises the division: `${tid}_${Division}.json`.
 - The JSON is inconsistent by design: `decklist` is an array *or* an empty
   string, `id` is a string *or* a number, `table` is padded like `" 129 "`.
