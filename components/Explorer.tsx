@@ -1,6 +1,8 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Player } from "@/lib/pokedata";
+import type { EventMeta } from "./shared";
 import { eliminate } from "@/lib/elimination";
 import { splitName } from "@/lib/pokedata";
 import { buildSearchIndex, countryName, searchPlayers } from "@/lib/search";
@@ -32,6 +34,15 @@ import {
 const CUT = 8;
 
 /**
+ * How many rows are in the DOM to begin with, and how many more each time the
+ * reader nears the bottom. Baltimore 2026 had 1082 players with 6473 team
+ * slots — drawn all at once that's ~25k nodes, and every keystroke, star or
+ * expanded row went through all of it. Search and the favourites filter still
+ * run over the full list; only the drawing is lazy.
+ */
+const CHUNK = 80;
+
+/**
  * The standings table. The event, the chrome and the rows themselves belong to
  * `EventShell` one level up, so that switching to Usage or Bracket replaces
  * only what's below the toolbar — see the layout for why.
@@ -59,13 +70,44 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
   // Folded once per fetch, not once per keystroke.
   const index = useMemo(() => buildSearchIndex(players ?? []), [players]);
 
-  const rows = useMemo(() => {
-    if (!players) return [];
-    return searchPlayers(index, query).filter(({ player: p }) => {
-      if (favesOnly && !faves.has(p.name)) return false;
-      return true;
-    });
-  }, [players, index, query, favesOnly, faves]);
+  // Two steps on purpose: the searched list is the expensive one, and it must
+  // not be rebuilt when a star is toggled — each rebuild hands every row a new
+  // `slots` set, which is exactly what defeats the row memo below.
+  const searched = useMemo(
+    () => (players ? searchPlayers(index, query) : []),
+    [players, index, query],
+  );
+  const rows = useMemo(
+    () => (favesOnly ? searched.filter(({ player: p }) => faves.has(p.name)) : searched),
+    [searched, favesOnly, faves],
+  );
+
+  // Windowing. Reset whenever the list changes shape; the sentinel below
+  // grows it again as the reader scrolls.
+  const [limit, setLimit] = useState(CHUNK);
+  useEffect(() => setLimit(CHUNK), [query, favesOnly]);
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || rows.length <= limit) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setLimit((n) => n + CHUNK);
+      },
+      { rootMargin: "800px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [rows.length, limit]);
+
+  /** Make sure a row is drawn before scrolling to it. */
+  const reveal = useCallback(
+    (key: string) => {
+      const i = rows.findIndex(({ player }) => player.key === key);
+      if (i >= limit) setLimit(i + CHUNK);
+    },
+    [rows, limit],
+  );
 
   const byName = useMemo(
     () => new Map((players ?? []).map((p) => [p.name, p])),
@@ -118,6 +160,7 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
       players.find((p) => p.name.toLowerCase() === want) ??
       players.find((p) => p.display.toLowerCase() === want);
     if (!hit) return;
+    reveal(hit.key);
     setOpenRow(hit.key);
     // One frame for the row to exist, another for the panel to start opening.
     requestAnimationFrame(() =>
@@ -136,6 +179,7 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
       const hit = byName.get(name);
       if (!hit) return;
       setQuery("");
+      reveal(hit.key);
       setOpenRow(hit.key);
       requestAnimationFrame(() => {
         document
@@ -143,7 +187,7 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
           ?.scrollIntoView({ behavior: "smooth", block: "center" });
       });
     },
-    [byName, setQuery, setOpenRow],
+    [byName, setQuery, setOpenRow, reveal],
   );
 
   // Gold is for results, so the leader's card only fills once there is one.
@@ -160,14 +204,8 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
 
       <div className="rows">
       {!players && !error && <StandingsSkeleton />}
-      {rows.map(({ player: p, slots }, i) => {
-        const open = openRow === p.key;
-        const top = p.placing <= CUT;
-        const lead = p.placing === 1;
-        const crowned = lead && finished;
+      {rows.slice(0, limit).map(({ player: p, slots }, i) => {
         const outRound = elim.outIn.get(p.name) ?? null;
-        const outTag =
-          outRound === null ? null : outStage(outRound, meta.rounds, meta.cutSize);
         return (
           <Fragment key={p.key}>
             {/* Nothing to divide from when there's no row above. If both
@@ -179,126 +217,26 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
             {i === cutAt && i > 0 && i !== outAt && (
               <div className="cutline">Top {CUT}</div>
             )}
-            {/* The star can't live inside the row: the row is a button and
-                a button can't contain one. It's a sibling laid over the
-                column the row leaves empty for it — see .rowbox. */}
-            <div className={`rowbox${crowned ? " crowned" : ""}`}>
-              <button
-                id={`row-${encodeURIComponent(p.key)}`}
-                className={`row${lead ? " lead" : ""}${crowned ? " crowned" : ""}${top ? " top" : ""}${open ? " open" : ""}`}
-                aria-expanded={open}
-                onClick={() => setOpenRow(open ? null : p.key)}
-              >
-                <RankDisc placing={p.placing} crowned={crowned} />
-                <span className="starslot" aria-hidden="true" />
-                <span className="who">
-                  <span className="l1">
-                    <span className="nm">{p.display}</span>
-                    {p.country && (
-                      <span className="cc" title={countryName(p.country) ?? undefined}>
-                        {p.country}
-                      </span>
-                    )}
-                  </span>
-                  {(p.trainerName || p.droppedAfter !== null || outTag) && (
-                    <span className="sub">
-                      {p.trainerName}
-                      {p.droppedAfter !== null && ` · dropped R${p.droppedAfter}`}
-                      {/* Knocked out of the bracket, which happens above the
-                          line — the divider can't speak for these. Named by
-                          its stage, not its round: R12 is the number the
-                          feed counts in, "Top 16" is what the rest of the
-                          page — and everyone watching — calls it. */}
-                      {outTag && ` · ${outTag}`}
-                    </span>
-                  )}
-                </span>
-                <span className="team">
-                  {p.hasTeam ? (
-                    p.team.map((m, k) => (
-                      <MonArt
-                        key={`${m.id}-${k}`}
-                        name={m.name}
-                        item={m.item}
-                        variant="row"
-                        hit={slots.has(k)}
-                      />
-                    ))
-                  ) : (
-                    <span className="noteam">no team list</span>
-                  )}
-                </span>
-                <span className="rec">
-                  <span className="w">{p.wins}</span>-<span className="l">{p.losses}</span>-{p.ties}
-                </span>
-                <span className="pts">{p.points}</span>
-                <span className="res">{p.oppWinPct.toFixed(2)}</span>
-                <span className="res">{p.oppOppWinPct.toFixed(2)}</span>
-              </button>
-              <StarButton name={p.name} on={faves.has(p.name)} onToggle={toggleFave} />
-            </div>
-
-            {shownRow === p.key && (
-              <Collapse open={open}>
-                <div className="detail">
-                  <div>
-                    <h3>Rounds</h3>
-                    <div className="rounds">
-                      {p.matches.map((m) => (
-                        <div className="rd" key={m.round}>
-                          {/* Swiss counts in rounds and people say "R5"; the
-                              bracket doesn't. Past the cut this is the same
-                              name the columns, the modal and the row's own
-                              "out in Top 8" already use — and it falls back
-                              to the number for the round where `cutSize`
-                              hasn't resolved yet. */}
-                          <span className="r" title={`Round ${m.round}`}>
-                            {(meta.rounds !== null
-                              ? stageOf(m.round, meta.rounds, meta.cutSize)?.name
-                              : null) ?? `R${m.round}`}
-                          </span>
-                          {/* A cut table can still be out — the same
-                              breathing chip the bracket draws, so "live"
-                              reads the same in both places. */}
-                          <span
-                            className={`v ${m.result ?? "live"}`}
-                            title={m.result ? undefined : "Still playing"}
-                          >
-                            {m.result}
-                          </span>
-                          {m.opponent ? (
-                            byName.has(m.opponent) ? (
-                              <button className="o link" onClick={() => jumpTo(m.opponent!)}>
-                                {m.opponent}
-                              </button>
-                            ) : (
-                              <span className="o">{m.opponent}</span>
-                            )
-                          ) : (
-                            <span className="o">bye</span>
-                          )}
-                          <span className="tbl">{m.table ? `table ${m.table}` : ""}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <h3>{p.hasTeam ? "Team" : "Team list not public"}</h3>
-                    {p.hasTeam && (
-                      <div className="mons">
-                        {p.team.map((m, k) => (
-                          <MonCard key={`${m.id}-${k}`} mon={m} hit={slots.has(k)} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Collapse>
-            )}
-
+            <StandingsRow
+              p={p}
+              slots={slots}
+              open={openRow === p.key}
+              shown={shownRow === p.key}
+              faved={faves.has(p.name)}
+              finished={finished}
+              outTag={outRound === null ? null : outStage(outRound, meta.rounds, meta.cutSize)}
+              meta={meta}
+              byName={byName}
+              onOpen={setOpenRow}
+              onToggleFave={toggleFave}
+              onJump={jumpTo}
+            />
           </Fragment>
         );
       })}
+      {/* Off-screen by a good margin, so the next chunk is usually in the
+          DOM before the reader reaches the end of this one. */}
+      {rows.length > limit && <div ref={sentinel} className="more" aria-hidden="true" />}
 
       {/* The third divider, and the only one not drawn from the standings:
           under it are the favourites this event doesn't have a row for.
@@ -344,3 +282,163 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ *
+ * One row. Memoised so that opening, starring or searching re-renders the
+ * rows that changed and not the other thousand. Everything that varies per
+ * row comes in as a prop; the handlers are stable, and `slots` is the same
+ * Set for as long as the search result is.
+ * ------------------------------------------------------------------ */
+const StandingsRow = memo(function StandingsRow({
+  p,
+  slots,
+  open,
+  shown,
+  faved,
+  finished,
+  outTag,
+  meta,
+  byName,
+  onOpen,
+  onToggleFave,
+  onJump,
+}: {
+  p: Player;
+  slots: Set<number>;
+  open: boolean;
+  /** Mounted — open, or still shrinking after a close. */
+  shown: boolean;
+  faved: boolean;
+  finished: boolean;
+  outTag: string | null;
+  meta: EventMeta;
+  byName: Map<string, Player>;
+  onOpen: (key: string | null) => void;
+  onToggleFave: (name: string) => void;
+  onJump: (name: string) => void;
+}) {
+  const top = p.placing <= CUT;
+  const lead = p.placing === 1;
+  const crowned = lead && finished;
+
+  return (
+    <>
+      {/* The star can't live inside the row: the row is a button and
+          a button can't contain one. It's a sibling laid over the
+          column the row leaves empty for it — see .rowbox. */}
+      <div className={`rowbox${crowned ? " crowned" : ""}`}>
+        <button
+          id={`row-${encodeURIComponent(p.key)}`}
+          className={`row${lead ? " lead" : ""}${crowned ? " crowned" : ""}${top ? " top" : ""}${open ? " open" : ""}`}
+          aria-expanded={open}
+          onClick={() => onOpen(open ? null : p.key)}
+        >
+          <RankDisc placing={p.placing} crowned={crowned} />
+          <span className="starslot" aria-hidden="true" />
+          <span className="who">
+            <span className="l1">
+              <span className="nm">{p.display}</span>
+              {p.country && (
+                <span className="cc" title={countryName(p.country) ?? undefined}>
+                  {p.country}
+                </span>
+              )}
+            </span>
+            {(p.trainerName || p.droppedAfter !== null || outTag) && (
+              <span className="sub">
+                {p.trainerName}
+                {p.droppedAfter !== null && ` · dropped R${p.droppedAfter}`}
+                {/* Knocked out of the bracket, which happens above the
+                    line — the divider can't speak for these. Named by
+                    its stage, not its round: R12 is the number the
+                    feed counts in, "Top 16" is what the rest of the
+                    page — and everyone watching — calls it. */}
+                {outTag && ` · ${outTag}`}
+              </span>
+            )}
+          </span>
+          <span className="team">
+            {p.hasTeam ? (
+              p.team.map((m, k) => (
+                <MonArt
+                  key={`${m.id}-${k}`}
+                  name={m.name}
+                  item={m.item}
+                  variant="row"
+                  hit={slots.has(k)}
+                />
+              ))
+            ) : (
+              <span className="noteam">no team list</span>
+            )}
+          </span>
+          <span className="rec">
+            <span className="w">{p.wins}</span>-<span className="l">{p.losses}</span>-{p.ties}
+          </span>
+          <span className="pts">{p.points}</span>
+          <span className="res">{p.oppWinPct.toFixed(2)}</span>
+          <span className="res">{p.oppOppWinPct.toFixed(2)}</span>
+        </button>
+        <StarButton name={p.name} on={faved} onToggle={onToggleFave} />
+      </div>
+
+      {shown && (
+        <Collapse open={open}>
+          <div className="detail">
+            <div>
+              <h3>Rounds</h3>
+              <div className="rounds">
+                {p.matches.map((m) => (
+                  <div className="rd" key={m.round}>
+                    {/* Swiss counts in rounds and people say "R5"; the
+                        bracket doesn't. Past the cut this is the same
+                        name the columns, the modal and the row's own
+                        "out in Top 8" already use — and it falls back
+                        to the number for the round where `cutSize`
+                        hasn't resolved yet. */}
+                    <span className="r" title={`Round ${m.round}`}>
+                      {(meta.rounds !== null
+                        ? stageOf(m.round, meta.rounds, meta.cutSize)?.name
+                        : null) ?? `R${m.round}`}
+                    </span>
+                    {/* A cut table can still be out — the same
+                        breathing chip the bracket draws, so "live"
+                        reads the same in both places. */}
+                    <span
+                      className={`v ${m.result ?? "live"}`}
+                      title={m.result ? undefined : "Still playing"}
+                    >
+                      {m.result}
+                    </span>
+                    {m.opponent ? (
+                      byName.has(m.opponent) ? (
+                        <button className="o link" onClick={() => onJump(m.opponent!)}>
+                          {m.opponent}
+                        </button>
+                      ) : (
+                        <span className="o">{m.opponent}</span>
+                      )
+                    ) : (
+                      <span className="o">bye</span>
+                    )}
+                    <span className="tbl">{m.table ? `table ${m.table}` : ""}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h3>{p.hasTeam ? "Team" : "Team list not public"}</h3>
+              {p.hasTeam && (
+                <div className="mons">
+                  {p.team.map((m, k) => (
+                    <MonCard key={`${m.id}-${k}`} mon={m} hit={slots.has(k)} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </Collapse>
+      )}
+    </>
+  );
+});
