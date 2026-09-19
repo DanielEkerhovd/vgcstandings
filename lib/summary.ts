@@ -71,7 +71,16 @@ async function meta(tid: string, division: string) {
 export async function eventSnapshot(
   rawTid: string | undefined,
   rawDivision: string | undefined,
+  /**
+   * `rows: false` is the light snapshot: the catalogue and the header line,
+   * with `standings` left empty. It's what a person's page render gets — the
+   * masthead can be drawn from it at once and the browser fetches the rows
+   * itself — while a crawler, which never runs the client, gets the full one.
+   * `lib/crawler.ts` decides which; nothing else should.
+   */
+  opts: { rows?: boolean } = {},
 ): Promise<EventSnapshot | null> {
+  const rows = opts.rows ?? true;
   const division = asDiv(rawDivision);
   const tid = rawTid ?? (await listEvents())[0]?.tid;
   if (!tid || !/^\d{7}$/.test(tid)) return null;
@@ -83,15 +92,17 @@ export async function eventSnapshot(
     const [file, events, line] = await Promise.all([
       // Same in-memory copy the proxy route serves, so the HTML and the first
       // client refresh agree. Not Next's fetch cache — lib/upstream.ts says why.
-      fetchStandingsFile(url, 4000),
+      rows ? fetchStandingsFile(url, 4000) : Promise.resolve(null),
       listEvents(),
       meta(tid, division),
     ]);
 
-    const standings = normalize(JSON.parse(file.text) as RawPlayer[]).sort(
-      (a, b) => a.placing - b.placing,
-    );
-    if (standings.length === 0) return null;
+    const standings = file
+      ? normalize(JSON.parse(file.text) as RawPlayer[]).sort(
+          (a, b) => a.placing - b.placing,
+        )
+      : [];
+    if (rows && standings.length === 0) return null;
 
     const event = events.find((e) => e.tid === tid);
 

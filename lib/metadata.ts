@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { eventSnapshot, findPlayer, ordinal, progressLine, recordOf } from "./summary";
+import { isCrawler } from "./crawler";
 
 /**
  * One builder for every page. Every share of this site is a link to a
@@ -16,7 +17,10 @@ export async function eventMetadata(opts: {
 }): Promise<Metadata> {
   const { tid, division, player: wanted, canonical, view } = opts;
 
-  const snap = await eventSnapshot(tid, division);
+  // A person's tab title doesn't need the leader or the shared player's
+  // record; a crawler's card does. Skipping the rows here is what keeps the
+  // render from waiting on the standings file twice.
+  const snap = await eventSnapshot(tid, division, { rows: await isCrawler() });
   if (!snap) return { alternates: { canonical } };
 
   const player = findPlayer(snap, wanted);

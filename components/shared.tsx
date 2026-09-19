@@ -562,7 +562,8 @@ export function eventFinished(meta: EventMeta): boolean {
 export interface StandingsSeed {
   /** `${tid}/${division}` the rows belong to; ignored if it doesn't match. */
   key: string;
-  players: Player[];
+  /** null = masthead only; the rows are fetched on mount (see lib/seed.ts). */
+  players: Player[] | null;
   meta: EventMeta;
 }
 
@@ -579,7 +580,7 @@ export function useStandings(
   const [source, setSource] = useState<Source>(fresh ? "live" : null);
   const [fetchedAt, setFetchedAt] = useState<number | null>(fresh ? Date.now() : null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!fresh);
+  const [loading, setLoading] = useState(!fresh?.players);
 
   const keyRef = useRef(`${tid}/${division}`);
   keyRef.current = `${tid}/${division}`;

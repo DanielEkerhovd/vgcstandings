@@ -5,6 +5,7 @@ import { listUpcoming } from "@/lib/events";
 import { asDiv, circuitEvents, eventSnapshot, latestEvent } from "@/lib/summary";
 import { eventMetadata } from "@/lib/metadata";
 import { toSeed } from "@/lib/seed";
+import { isCrawler } from "@/lib/crawler";
 
 /**
  * Standings for whatever event ran most recently.
@@ -51,7 +52,10 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   const [circuit, upcoming, snap] = await Promise.all([
     circuitEvents(),
     listUpcoming(),
-    latest?.tid ? eventSnapshot(latest.tid, division) : Promise.resolve(null),
+    // Rows in the HTML only for crawlers — the event layout says why.
+    latest?.tid
+      ? eventSnapshot(latest.tid, division, { rows: await isCrawler() })
+      : Promise.resolve(null),
   ]);
 
   /* The shell is normally the `[division]` layout's, so that a tab click

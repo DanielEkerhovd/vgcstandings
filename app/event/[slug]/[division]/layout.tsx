@@ -5,6 +5,7 @@ import { asDiv, circuitEvents, eventBySlug, eventSnapshot } from "@/lib/summary"
 import { DIVISIONS, type Params } from "@/lib/eventView";
 import { toSeed } from "@/lib/seed";
 import { EventJsonLd } from "@/lib/jsonld";
+import { isCrawler } from "@/lib/crawler";
 
 /**
  * Everything the three views of an event have in common, fetched once.
@@ -23,9 +24,16 @@ import { EventJsonLd } from "@/lib/jsonld";
  * There is deliberately **no `loading.tsx` beside this file**. A Suspense
  * boundary above the shell would start the response before `notFound()` could
  * set a status, turning a bad slug's 404 into a 200 with a `noindex` tag, and
- * would put a skeleton ahead of the rows in the first HTML — which is the
- * thing `lib/seed.ts` exists to prevent. The per-view `loading.tsx` files sit
- * *below* this and are the right place for it. Don't move one up here.
+ * would put a skeleton ahead of the rows in the first HTML for crawlers, who
+ * never run the client. The per-view `loading.tsx` files sit *below* this and
+ * are the right place for it. Don't move one up here.
+ *
+ * Who gets the rows in the HTML is decided by `isCrawler()`. A search engine
+ * or a link unfurler gets the full snapshot, because the first response is
+ * all it will read. A person gets the light one — event, round, player count
+ * — and a skeleton, and the browser fetches the rows the moment the shell
+ * mounts. That is what makes a reload paint at once instead of waiting on a
+ * multi-megabyte file and then carrying every row of it inline.
  */
 export default async function EventLayout({
   params,
@@ -50,7 +58,7 @@ export default async function EventLayout({
   const [upcoming, circuit, snap] = await Promise.all([
     upcomingP,
     circuitEvents(),
-    eventSnapshot(event.tid, division),
+    eventSnapshot(event.tid, division, { rows: await isCrawler() }),
   ]);
 
   return (
@@ -58,7 +66,9 @@ export default async function EventLayout({
       {/* One event, one URL. The standings address names it from all three
           views rather than each view claiming to be the same event at a
           different address; `alternates.canonical` still differs per view. */}
-      {snap && <EventJsonLd snap={snap} path={`/event/${slug}/${division}`} />}
+      {snap && snap.standings.length > 0 && (
+        <EventJsonLd snap={snap} path={`/event/${slug}/${division}`} />
+      )}
       <EventShell
         circuit={[...circuit, ...upcoming]}
         initialTid={event.tid}
