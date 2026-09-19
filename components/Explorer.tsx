@@ -118,12 +118,12 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
       players.find((p) => p.name.toLowerCase() === want) ??
       players.find((p) => p.display.toLowerCase() === want);
     if (!hit) return;
-    setOpenRow(hit.name);
+    setOpenRow(hit.key);
     // One frame for the row to exist, another for the panel to start opening.
     requestAnimationFrame(() =>
       requestAnimationFrame(() =>
         document
-          .getElementById(`row-${encodeURIComponent(hit.name)}`)
+          .getElementById(`row-${encodeURIComponent(hit.key)}`)
           ?.scrollIntoView({ behavior: "smooth", block: "center" }),
       ),
     );
@@ -131,12 +131,15 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
 
   const jumpTo = useCallback(
     (name: string) => {
-      if (!byName.has(name)) return;
+      // Two players can share a name (see Player.key); the link lands on
+      // the first, which is all the opponent string can say.
+      const hit = byName.get(name);
+      if (!hit) return;
       setQuery("");
-      setOpenRow(name);
+      setOpenRow(hit.key);
       requestAnimationFrame(() => {
         document
-          .getElementById(`row-${encodeURIComponent(name)}`)
+          .getElementById(`row-${encodeURIComponent(hit.key)}`)
           ?.scrollIntoView({ behavior: "smooth", block: "center" });
       });
     },
@@ -158,7 +161,7 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
       <div className="rows">
       {!players && !error && <StandingsSkeleton />}
       {rows.map(({ player: p, slots }, i) => {
-        const open = openRow === p.name;
+        const open = openRow === p.key;
         const top = p.placing <= CUT;
         const lead = p.placing === 1;
         const crowned = lead && finished;
@@ -166,7 +169,7 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
         const outTag =
           outRound === null ? null : outStage(outRound, meta.rounds, meta.cutSize);
         return (
-          <Fragment key={p.name}>
+          <Fragment key={p.key}>
             {/* Nothing to divide from when there's no row above. If both
                 land on the same row the red one wins — it's the stronger
                 statement, and two rules stacked read as neither. */}
@@ -181,10 +184,10 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
                 column the row leaves empty for it — see .rowbox. */}
             <div className={`rowbox${crowned ? " crowned" : ""}`}>
               <button
-                id={`row-${encodeURIComponent(p.name)}`}
+                id={`row-${encodeURIComponent(p.key)}`}
                 className={`row${lead ? " lead" : ""}${crowned ? " crowned" : ""}${top ? " top" : ""}${open ? " open" : ""}`}
                 aria-expanded={open}
-                onClick={() => setOpenRow(open ? null : p.name)}
+                onClick={() => setOpenRow(open ? null : p.key)}
               >
                 <RankDisc placing={p.placing} crowned={crowned} />
                 <span className="starslot" aria-hidden="true" />
@@ -235,7 +238,7 @@ export default function Explorer({ initialPlayer }: { initialPlayer?: string }) 
               <StarButton name={p.name} on={faves.has(p.name)} onToggle={toggleFave} />
             </div>
 
-            {shownRow === p.name && (
+            {shownRow === p.key && (
               <Collapse open={open}>
                 <div className="detail">
                   <div>

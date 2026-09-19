@@ -64,6 +64,15 @@ export interface Mon {
 
 export interface Player {
   name: string; // full string, still the join key
+  /**
+   * Unique within one event's rows. Equal to `name` unless the field holds
+   * two people with the same name — Baltimore 2026 had two "Chase Thompson
+   * [US]", both IGN "Chase" — in which case the second is `name#2` and so on.
+   * Use this for React keys, DOM ids and the open row. Keep `name` for
+   * everything that has to cross rows or events (opponent links, favourites):
+   * pokedata itself can't tell the two apart, so neither can those.
+   */
+  key: string;
   display: string; // without the [CC] suffix
   country: string | null;
   trainerName: string | null;
@@ -92,7 +101,10 @@ export function splitName(name: string): { display: string; country: string | nu
 }
 
 export function normalize(raw: RawPlayer[]): Player[] {
+  const seen = new Map<string, number>();
   return raw.map((p) => {
+    const nth = (seen.get(p.name) ?? 0) + 1;
+    seen.set(p.name, nth);
     const country = p.name.match(COUNTRY)?.[1] ?? null;
     const hasTeam = Array.isArray(p.decklist);
 
@@ -127,6 +139,7 @@ export function normalize(raw: RawPlayer[]): Player[] {
 
     return {
       name: p.name,
+      key: nth === 1 ? p.name : `${p.name}#${nth}`,
       display: p.name.replace(COUNTRY, ""),
       country: country ? country.toUpperCase() : null,
       trainerName: p["Trainer name"]?.trim() || null,
